@@ -1,12 +1,10 @@
-# Workflows and operations
+# Database workflows
 
-This section is for repeatable workflows around database content and using the tool.
+Put database-content runbooks here. Cover:
 
-Document procedures here when they involve:
+- proposing, reviewing, applying, and rolling back SQL;
+- validating changes in an appropriate environment;
+- common data-oriented tasks; and
+- keeping examples and model documentation aligned with SQL.
 
-- proposing, reviewing, applying, or rolling back SQL changes;
-- validating a change against an appropriate local or controlled database;
-- explaining data-oriented how-to tasks; and
-- keeping examples and model documentation aligned with the versioned SQL.
-
-The `db` command is already on `PATH`; examples should use `db prod ...`, `db local ...`, or `db hybrid ...`, not a direct `db.bat` invocation. Do not place credentials or production data in examples.
+Use `db prod ...`, `db local ...`, or `db hybrid ...`. Do not document direct `db.bat` calls or include credentials and production data.

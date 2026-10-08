@@ -1,7 +1,7 @@
 # Data architecture
 
-This section is the home for the database's data model and the reasoning behind it.
+Document the database's domain vocabulary, entities, relationships, ownership, lifecycle, sensitive fields, compatibility expectations, and the link between versioned SQL and the model.
 
-Document the domain vocabulary, entities, relationships, ownership, lifecycle, sensitive fields, compatibility expectations, and the relationship between versioned SQL and the model. When a SQL change alters the model, update the relevant explanation and usage guidance with it.
+Update model and usage documentation with every SQL change that alters behavior or structure. Prefer explicit, reviewable, reversible changes; clear names and constraints; and representative examples that do not expose production data.
 
-Prefer explicit, reviewable, reversible changes; clear names and constraints; and examples that are representative without exposing production data. Keep tool implementation details in `db-workbench` and put operational procedures in [`../skills/`](../skills/README.md).
+Keep tool implementation details in `db-workbench` and operational procedures in [`../skills/`](../skills/README.md).
