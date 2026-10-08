@@ -25,7 +25,7 @@ Every SELECT is buffered and previewed at 20 rows.
 ```powershell
 db expand
 db expand --full
-db expand --csv "C:\path\result.csv"
+db expand --csv "C:\\path\\result.csv"
 ```
 
 `--csv` exports the complete buffered result, including the previewed rows.
@@ -38,3 +38,9 @@ db refresh <table> YYYY-MM-DD YYYY-MM-DD
 ```
 
 Refresh only when the table's local data is known to be stale and the relevant workflow permits it. Use the data-model documentation to understand the table's freshness column and time range.
+
+## GitHub change lifecycle
+
+Create SQL and documentation changes in the repository's `.worktrees` directory from an up-to-date `main`. Before integration, run `git -C .\.worktrees\<name> merge main`. Accept fast-forwards and non-conflicting automatic resolutions. Resolve conflicts semantically by checking SQL, model meaning, and usage docs together.
+
+From the main worktree, use `git merge --squash <branch>`, validate the result, commit, and `git push origin main`. Delete the worktree and its branch only after the push succeeds.
