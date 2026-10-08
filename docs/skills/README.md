@@ -1,10 +1,40 @@
-# Database workflows
+# BI workflows
 
-Put database-content runbooks here. Cover:
+## Query contexts
 
-- proposing, reviewing, applying, and rolling back SQL;
-- validating changes in an appropriate environment;
-- common data-oriented tasks; and
-- keeping examples and model documentation aligned with SQL.
+```powershell
+db prod "SELECT column_a, column_b FROM schema.table WHERE ..."
+db local "SELECT column_a, column_b FROM schema.table WHERE ..."
+```
 
-Use `db prod ...`, `db local ...`, or `db hybrid ...`. Do not document direct `db.bat` calls or include credentials and production data.
+`prod` queries the current database with the configured read-only credential. `local` queries the sanitized MariaDB snapshot. Local results can include a freshness advisory when the snapshot is behind PROD.
+
+Use hybrid mode when the operation needs explicit context routing:
+
+```powershell
+db hybrid "SELECT * FROM local.some_table"
+db hybrid "INSERT INTO target_table SELECT ... FROM source_table"
+```
+
+In hybrid SQL, unqualified read relations default to PROD and mutation targets default to LOCAL. Explicit mixed PROD/LOCAL SELECTs may be rejected when the tool cannot preserve their semantics.
+
+## Results and exports
+
+Every SELECT is buffered and previewed at 20 rows.
+
+```powershell
+db expand
+db expand --full
+db expand --csv "C:\path\result.csv"
+```
+
+`--csv` exports the complete buffered result, including the previewed rows.
+
+## Refreshing local data
+
+```powershell
+db refresh <table>
+db refresh <table> YYYY-MM-DD YYYY-MM-DD
+```
+
+Refresh only when the table's local data is known to be stale and the relevant workflow permits it. Use the data-model documentation to understand the table's freshness column and time range.

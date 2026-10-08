@@ -1,7 +1,22 @@
-# Data architecture
+# Data model
 
-Document the database's domain vocabulary, entities, relationships, ownership, lifecycle, sensitive fields, compatibility expectations, and the link between versioned SQL and the model.
+This is the user-facing reference for understanding the database before querying it.
 
-Update model and usage documentation with every SQL change that alters behavior or structure. Prefer explicit, reviewable, reversible changes; clear names and constraints; and representative examples that do not expose production data.
+## Data trust
 
-Keep tool implementation details in `db-workbench` and operational procedures in [`../skills/`](../skills/README.md).
+- **PROD** is the current source and is accessed read-only through the configured credential.
+- **LOCAL** is a sanitized snapshot for analysis and development. It may omit data, transform sensitive fields, or lag behind PROD.
+- **HYBRID** routes an operation between PROD and LOCAL. Use it only when the intended source and target are clear.
+
+## How to read the model
+
+For each domain area, document and read:
+
+1. the business grain of each table or view;
+2. primary keys and stable identifiers;
+3. relationships and approved join paths;
+4. date, status, and freshness fields;
+5. sensitive or transformed fields; and
+6. the authoritative source and known snapshot limitations.
+
+Versioned SQL defines the database structure. This directory explains its meaning, relationships, and safe usage. Update both when a SQL change alters the model or the way analysts should query it.

@@ -1,8 +1,8 @@
 # Documentation map
 
-`db-report` versions database content and documents how to use it through `db-workbench`.
+This repository is the BI-facing guide to database content and use of the `db-workbench` tool.
 
-- [`skills/`](skills/README.md) - SQL workflows, validation, and how-to guidance.
-- [`architecture/`](architecture/README.md) - data model, domain vocabulary, ownership, and design principles.
+- [`skills/`](skills/README.md) - query, export, refresh, and SQL-change workflows.
+- [`architecture/`](architecture/README.md) - data model, relationships, data trust, and terminology.
 
-Tool implementation and tool architecture belong in `db-workbench`.
+Tool implementation and developer documentation belong in `db-workbench`.
