@@ -1,4 +1,4 @@
-# BI user guide
+# db-report agent instructions
 
 ## Scope
 

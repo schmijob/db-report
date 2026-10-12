@@ -25,7 +25,7 @@ Versioned SQL defines the database structure. This directory explains its meanin
 
 `db-report` is the source of truth for versioned database objects. Stored
 procedures are currently the first deployable slice and live in
-[`../../procedures/`](../../procedures/). The `db-workbench` TUI synchronizes
+[`../../procedures/`](../../procedures/procedures.md). The `db-workbench` TUI synchronizes
 PROD definitions into that directory and LOCAL, then uses an ignored
 `.worktrees/` directory for isolated changes. The repository root remains on
 `main`; review the GitHub diff before using the explicit PROD deployment action.
@@ -491,8 +491,8 @@ The FANF procedure family includes:
 ```text
 proc_uebertrag_fanf (superseded)
 proc_uebertrag_fanf2 (superseded)
-proc_uebertrag_fanf3 
-proc_uebertrag_fanf_pdf 
+proc_uebertrag_fanf3
+proc_uebertrag_fanf_pdf
 ```
 
 The fanf_anwesenheit family represents attendance captured manually by supervisors and is used for reconciliation, but is not the main source of the data model.
@@ -638,7 +638,7 @@ FZ bookings ----------+         |
                                 +-> tbl_ueb_peko
                                 +-> tbl_ueb_peko_archiv
 ```
-PEKO is just one downstream consumer of Onboarding, it is not the same pipeline. 
+PEKO is just one downstream consumer of Onboarding, it is not the same pipeline.
 ---
 
 # 13. Performance Domain
