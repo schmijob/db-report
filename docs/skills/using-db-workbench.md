@@ -47,6 +47,26 @@ From the main worktree, use `git merge --squash <branch>`, validate the result, 
 
 For a manual fallback, verify `git fetch origin`, `git diff --exit-code main origin/main`, and `git status --short --branch` before `git worktree remove .\.worktrees\<name>`. A squash branch may require `git branch -D task/<name>` after those checks; use it only after the pushed `main` contains the change.
 
+## Foreground delivery runner
+
+The db-workbench main menu's Delivery runner is shared by both repositories:
+
+1. Select `db-report` or `db-workbench`, then select any worktree. The
+   repository-root `main` is included even when it is dirty.
+2. The TUI commits dirty selected files with the supplied message, pushes the
+   selected branch, and opens the foreground runner in a new Windows Terminal
+   tab through the existing WT launcher.
+3. Inspect the PR conversation and complete diff in the runner. Choose squash
+   merge, open the PR in a browser, hand the change back to Codex with a
+   comment, or leave it open.
+4. Handbacks try the originating `CODEX_SESSION_ID`, then `codex resume
+   --last`, and finally a new Codex session. Failed merges and merge conflicts
+   use the same handback path.
+
+After a successful squash merge, the runner refreshes `origin/main` and closes
+the clean branch worktree. A dirty repository-root `main` is left untouched;
+the remote ref verifies the merge.
+
 ## Stored-procedure deployment
 
 `db-workbench` is the TUI for this repository. Its Stored procedure development
@@ -56,8 +76,9 @@ menu drives the first Git-backed database-object workflow:
 2. Create a task worktree below `.worktrees/` from the clean repository-root `main`.
 3. Edit the procedure file and run its LOCAL smoke test. A companion test, when
    needed, is `procedures/tests/<procedure_name>.sql`.
-4. Commit and push the procedure worktree from the TUI.
-5. Review the `main...HEAD` diff and create or open the GitHub pull request.
+4. Commit and push the procedure worktree from the TUI; the foreground delivery
+   runner opens automatically.
+5. Review the PR conversation and `main...HEAD` diff in the runner.
 6. After review, type `DEPLOY` to apply the committed procedure diff to PROD.
 7. After the procedure PR reaches `main`, let the TUI automatically refresh the
    repository and remove the clean procedure worktree and local branch.

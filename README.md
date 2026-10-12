@@ -27,3 +27,9 @@ production extracts must never be committed here. The db-workbench TUI owns the
 task-worktree lifecycle: after a clean procedure branch reaches `main`, it
 refreshes the remote state and removes the worktree and local branch, including
 the read-only directory cleanup required on Windows.
+
+The main-menu Delivery runner in `db-workbench` can select and push any
+db-report or db-workbench worktree, including a dirty repository-root `main`.
+It opens a foreground Windows Terminal tab with the PR conversation and diff,
+then offers squash merge or a Codex handback. Merge conflicts use the same
+session-preserving handback path.

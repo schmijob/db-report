@@ -48,6 +48,14 @@ rejects a squash branch, use `git branch -D task/<name>` only after the remote/
 main checks above succeed. A completed change has no task worktree left below
 `.worktrees`.
 
+The db-workbench TUI's Delivery runner can push any selected db-report or
+db-workbench worktree, including a dirty repository-root `main` checkout. It
+opens the foreground runner in a new Windows Terminal tab, displays the pull
+request and diff, and offers squash merge or a Codex handback. Handbacks try the
+originating `CODEX_SESSION_ID`, then the most recent resumable session, then a
+new Codex session. Failed squash merges and merge conflicts follow the same
+handback path.
+
 The repository root is the `main` worktree. `.worktrees/` contains temporary,
 uncommitted task worktrees and is ignored by Git; do not add SQL or documentation
 changes directly to the root while a task worktree is active.
