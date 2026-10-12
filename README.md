@@ -23,4 +23,7 @@ directory.
 - [Views](views/views.md)
 
 Tool implementation belongs in `db-workbench`; credentials, query output, and
-production extracts must never be committed here.
+production extracts must never be committed here. The db-workbench TUI owns the
+task-worktree lifecycle: after a clean procedure branch reaches `main`, it
+refreshes the remote state and removes the worktree and local branch, including
+the read-only directory cleanup required on Windows.

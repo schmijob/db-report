@@ -32,11 +32,21 @@ git switch main
 git merge --squash task/<name>
 git commit -m "Describe the change"
 git push origin main
+git fetch origin
+git diff --exit-code main origin/main
+git status --short --branch
 git worktree remove .\.worktrees\<name>
 git branch -d task/<name>
+git worktree list
 ```
 
-Remove the worktree and branch only after the squash commit has been pushed successfully.
+The db-workbench TUI performs the final cleanup automatically when it sees a
+clean worktree's branch represented in synchronized `main`, including a squash
+merge. It handles Windows read-only directory attributes after confirming the
+worktree is clean. If the commands above are used manually and `git branch -d`
+rejects a squash branch, use `git branch -D task/<name>` only after the remote/
+main checks above succeed. A completed change has no task worktree left below
+`.worktrees`.
 
 The repository root is the `main` worktree. `.worktrees/` contains temporary,
 uncommitted task worktrees and is ignored by Git; do not add SQL or documentation

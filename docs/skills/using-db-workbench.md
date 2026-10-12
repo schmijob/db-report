@@ -43,7 +43,9 @@ Refresh only when the table's local data is known to be stale and the relevant w
 
 Create SQL and documentation changes in the repository's `.worktrees` directory from an up-to-date `main`. Before integration, run `git -C .\.worktrees\<name> merge main`. Accept fast-forwards and non-conflicting automatic resolutions. Resolve conflicts semantically by checking SQL, model meaning, and usage docs together.
 
-From the main worktree, use `git merge --squash <branch>`, validate the result, commit, and `git push origin main`. Delete the worktree and its branch only after the push succeeds.
+From the main worktree, use `git merge --squash <branch>`, validate the result, commit, and `git push origin main`. The db-workbench TUI then refreshes `origin/main` and automatically closes every clean worktree whose branch is represented in `main`, including squash merges. It handles Windows read-only directory attributes after the clean-state check. A change is not complete while its task worktree remains below `.worktrees`.
+
+For a manual fallback, verify `git fetch origin`, `git diff --exit-code main origin/main`, and `git status --short --branch` before `git worktree remove .\.worktrees\<name>`. A squash branch may require `git branch -D task/<name>` after those checks; use it only after the pushed `main` contains the change.
 
 ## Stored-procedure deployment
 
@@ -57,9 +59,13 @@ menu drives the first Git-backed database-object workflow:
 4. Commit and push the procedure worktree from the TUI.
 5. Review the `main...HEAD` diff and create or open the GitHub pull request.
 6. After review, type `DEPLOY` to apply the committed procedure diff to PROD.
+7. After the procedure PR reaches `main`, let the TUI automatically refresh the
+   repository and remove the clean procedure worktree and local branch.
 
 The TUI refuses to sync or create a task worktree from a dirty root, refuses to
 deploy uncommitted files, and uses a separate deployment credential rather than
 the PROD read-only credential. Configure the report repository and deployment
 credential in the db-workbench user configuration. Never commit credentials,
-query output, or production extracts.
+query output, or production extracts. Dirty worktrees are never removed by
+automatic cleanup; return to the TUI after the PR merge so it can close the
+clean worktree without relying on a manual Windows filesystem operation.
