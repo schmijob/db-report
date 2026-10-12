@@ -8,7 +8,7 @@ This repository explains what data means and how to access it. Tool source code 
 
 ## Onboarding
 
-- Read [`docs/architecture/`](docs/architecture/arcitecture.md) before writing a query.
+- Read [`docs/architecture/`](docs/architecture/architecture.md) before writing a query.
 - Read [`docs/skills/`](docs/skills/using-db-workbench.md) for query, export, and local-refresh workflows.
 - Use the documented table grain, keys, relationships, freshness, and sensitivity notes. Do not infer joins from names alone.
 
@@ -37,6 +37,10 @@ git branch -d task/<name>
 ```
 
 Remove the worktree and branch only after the squash commit has been pushed successfully.
+
+The repository root is the `main` worktree. `.worktrees/` contains temporary,
+uncommitted task worktrees and is ignored by Git; do not add SQL or documentation
+changes directly to the root while a task worktree is active.
 
 ## Core commands
 

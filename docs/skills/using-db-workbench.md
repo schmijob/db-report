@@ -44,3 +44,22 @@ Refresh only when the table's local data is known to be stale and the relevant w
 Create SQL and documentation changes in the repository's `.worktrees` directory from an up-to-date `main`. Before integration, run `git -C .\.worktrees\<name> merge main`. Accept fast-forwards and non-conflicting automatic resolutions. Resolve conflicts semantically by checking SQL, model meaning, and usage docs together.
 
 From the main worktree, use `git merge --squash <branch>`, validate the result, commit, and `git push origin main`. Delete the worktree and its branch only after the push succeeds.
+
+## Stored-procedure deployment
+
+`db-workbench` is the TUI for this repository. Its Stored procedure development
+menu drives the first Git-backed database-object workflow:
+
+1. Sync the stored procedures from PROD into `procedures/` and LOCAL.
+2. Create a task worktree below `.worktrees/` from the clean repository-root `main`.
+3. Edit the procedure file and run its LOCAL smoke test. A companion test, when
+   needed, is `procedures/tests/<procedure_name>.sql`.
+4. Commit and push the procedure worktree from the TUI.
+5. Review the `main...HEAD` diff and create or open the GitHub pull request.
+6. After review, type `DEPLOY` to apply the committed procedure diff to PROD.
+
+The TUI refuses to sync or create a task worktree from a dirty root, refuses to
+deploy uncommitted files, and uses a separate deployment credential rather than
+the PROD read-only credential. Configure the report repository and deployment
+credential in the db-workbench user configuration. Never commit credentials,
+query output, or production extracts.

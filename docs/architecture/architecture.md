@@ -21,6 +21,15 @@ For each domain area, document and read:
 
 Versioned SQL defines the database structure. This directory explains its meaning, relationships, and safe usage. Update both when a SQL change alters the model or the way analysts should query it.
 
+## Git-backed database objects
+
+`db-report` is the source of truth for versioned database objects. Stored
+procedures are currently the first deployable slice and live in
+[`../../procedures/`](../../procedures/). The `db-workbench` TUI synchronizes
+PROD definitions into that directory and LOCAL, then uses an ignored
+`.worktrees/` directory for isolated changes. The repository root remains on
+`main`; review the GitHub diff before using the explicit PROD deployment action.
+
 # Database Architecture Map
 
 ## Purpose
