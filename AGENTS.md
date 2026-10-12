@@ -8,8 +8,8 @@ This repository explains what data means and how to access it. Tool source code 
 
 ## Onboarding
 
-- Read [`docs/architecture/`](docs/architecture/README.md) before writing a query.
-- Read [`docs/skills/`](docs/skills/README.md) for query, export, and local-refresh workflows.
+- Read [`docs/architecture/`](docs/architecture/arcitecture.md) before writing a query.
+- Read [`docs/skills/`](docs/skills/using-db-workbench.md) for query, export, and local-refresh workflows.
 - Use the documented table grain, keys, relationships, freshness, and sensitivity notes. Do not infer joins from names alone.
 
 ## GitHub lifecycle
@@ -41,8 +41,9 @@ Remove the worktree and branch only after the squash commit has been pushed succ
 ## Core commands
 
 ```powershell
-db prod "SELECT ..."                         # query PROD
-db local "SELECT ..."                        # query the local snapshot
+db prod "SELECT ..."                         # query PROD (read only)
+db local "SELECT ..."                        # query the local snapshot (read/write)
+db hybrid "INSERT ..."                       # query PROD, write to LOCAL
 db hybrid "SELECT * FROM local.some_table"   # explicitly query LOCAL through hybrid mode
 db expand --full                              # show the complete previous result
 db expand --csv "C:\\path\\result.csv"        # export the complete previous result
@@ -51,7 +52,7 @@ db refresh <table>                            # refresh one local table
 
 Omit the SQL text to start an interactive session, for example `db local`. Query results show a 20-row preview; use `db expand` for the remaining rows. PROD access is read-only and applies the configured privacy policy.
 
-For analysis, prefer `db prod` or `db local`. Use `db hybrid` only when a documented workflow calls for it.
+For analysis, use `db prod`. For sandboxed development with small workloads on fixed datasets, use `db local`. For development on current data, full source tables, and workloads best handled by an actual server, use `db hybrid`.
 
 ## Rules
 
