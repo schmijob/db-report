@@ -347,6 +347,13 @@ proc_ueb_fz_buchungen
 tbl_ueb_fz_buchungen
 ```
 
+The shift-reconciliation work is staged in parallel: `proc_ueb_fz_join`
+resolves day-level source facts and expected-versus-actual shift assignments,
+while `proc_ueb_fz_shift_reconciliation` expands that assignment for
+validation and joins booking details from `tbl_ueb_buchungen_2`. The existing
+`proc_ueb_fz_buchungen` output remains the production path until the new
+result has been validated.
+
 For questions about actual personnel attendance, `vp_buchungen` is the more useful starting point than the raw booking import.
 
 ---

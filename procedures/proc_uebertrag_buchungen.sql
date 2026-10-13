@@ -156,12 +156,12 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	  LEFT JOIN vp_personal_u p ON b.persnr = p.persnr
 	  LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
 	  LEFT JOIN tbl_schichten s ON b.schicht = s.schicht
-	                           AND s.index <= 3
+	                           AND s.schichtindex <= 3
 	  WHERE b.datum BETWEEN CURDATE() - INTERVAL 7 DAY AND CURDATE()
 	    AND b.bg = 'ko'
 	;
 	
-	INSERT INTO tbl_ueb_fz_join (persnr, datum, bu_fz, bu_tp, bu_filedate, last_insert_update)
+	INSERT INTO tbl_ueb_fz_join (persnr, datum, bu_fz, bu_tp, bu_filedate, actual_shift_1, actual_shift_2, last_insert_update)
 	WITH buchungen AS (
 	SELECT persnr
 	     , datum
@@ -170,27 +170,65 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	     , filedate
 	  FROM tbl_ueb_buchungen
 	 WHERE datum BETWEEN p_mindate AND p_maxdate
-	)
-	
-	SELECT persnr
-	     , datum
-	     , MAX(`status`) AS bu_fz
-	     , MAX(tp) AS bu_tp
-	     , MAX(filedate) AS bu_filedate
-	     , NOW() AS last_insert_update
-	  FROM buchungen
-	 GROUP BY persnr
-	        , datum
-	
+)
+
+, actual_ranked AS (
+SELECT b.persnr
+     , b.datum
+     , b.schicht
+     , ROW_NUMBER() OVER (PARTITION BY b.persnr, b.datum ORDER BY b.kommen, b.schicht) AS actual_number
+  FROM tbl_ueb_buchungen_2 b
+ WHERE b.datum BETWEEN p_mindate AND p_maxdate
+)
+
+, actual_day AS (
+SELECT persnr
+     , datum
+     , MAX(CASE WHEN actual_number = 1 THEN schicht END) AS actual_shift_1
+     , MAX(CASE WHEN actual_number = 2 THEN schicht END) AS actual_shift_2
+  FROM actual_ranked
+ GROUP BY persnr
+        , datum
+)
+
+, day_facts AS (
+SELECT persnr
+     , datum
+     , MAX(`status`) AS bu_fz
+     , MAX(tp) AS bu_tp
+     , MAX(filedate) AS bu_filedate
+  FROM buchungen
+ GROUP BY persnr
+        , datum
+)
+
+SELECT f.persnr
+     , f.datum
+     , f.bu_fz
+     , f.bu_tp
+     , f.bu_filedate
+     , a.actual_shift_1
+     , a.actual_shift_2
+     , NOW() AS last_insert_update
+  FROM day_facts f
+  LEFT JOIN actual_day a ON a.persnr = f.persnr
+                         AND a.datum = f.datum
+
 	ON DUPLICATE KEY UPDATE
-	      bu_fz           = VALUES(bu_fz)
-	    , bu_tp           = VALUES(bu_tp)
-	    , bu_filedate     = VALUES(bu_filedate)
-	    , last_insert_update = IF(    bu_fz        <> VALUES(bu_fz)
-	    								    OR bu_tp        <> VALUES(bu_tp)
-	    								  , NOW()
-										  , tbl_ueb_fz_join.last_insert_update
-										  ) 
+	      last_insert_update = IF(
+	             NOT (tbl_ueb_fz_join.bu_fz <=> VALUES(bu_fz))
+	          OR NOT (tbl_ueb_fz_join.bu_tp <=> VALUES(bu_tp))
+	          OR NOT (tbl_ueb_fz_join.bu_filedate <=> VALUES(bu_filedate))
+	          OR NOT (tbl_ueb_fz_join.actual_shift_1 <=> VALUES(actual_shift_1))
+	          OR NOT (tbl_ueb_fz_join.actual_shift_2 <=> VALUES(actual_shift_2))
+	        , NOW()
+	        , tbl_ueb_fz_join.last_insert_update
+	      )
+	    , bu_fz         = VALUES(bu_fz)
+	    , bu_tp         = VALUES(bu_tp)
+	    , bu_filedate   = VALUES(bu_filedate)
+	    , actual_shift_1 = VALUES(actual_shift_1)
+	    , actual_shift_2 = VALUES(actual_shift_2)
 	;
 	
 	UPDATE tbl_ueb_fz_join j	
@@ -204,12 +242,14 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	      j.bu_fz               = 'XXX'
 	    , j.bu_tp               = NULL
 	    , j.bu_filedate         = v_filedate
+	    , j.actual_shift_1      = NULL
+	    , j.actual_shift_2      = NULL
 	    , j.last_insert_update  = NOW()
 	
 	WHERE j.datum BETWEEN p_mindate AND p_maxdate
 	  AND b.persnr IS NULL
 	  AND j.bu_filedate IS NOT NULL
-	  AND j.bu_fz <> 'XXX'
+	  AND NOT (j.bu_fz <=> 'XXX')
 	;
 
 END//
