@@ -15,10 +15,10 @@ END//
 ## Procedure tests
 
 Keep repeatable cases beside the procedure source in
-`tests/<procedure_name>/`:
+`procedures/tests/<procedure_name>/`:
 
 ```text
-tests/<procedure_name>/
+procedures/tests/<procedure_name>/
   fixture.sql
   source-checks.sql    # optional checks for source-data assumptions
   prod-fixture.sql     # optional representative rows from PROD
@@ -45,7 +45,7 @@ read-only checks that each return a single true/false value; use these to make
 important source-data assumptions explicit.
 
 Optional interactive smoke tests against configured LOCAL live in
-`tests/<procedure_name>.sql`. See the [db-workbench architecture guide](https://github.com/schmijob/db-workbench/blob/main/docs/architecture/architecture.md#procedure-fixture-suite)
-for fixture-runner behavior and the [developer workflow](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md#stored-procedure-workflow)
+`procedures/tests/<procedure_name>.sql`. See the [db-workbench architecture guide](https://github.com/schmijob/db-workbench/blob/main/docs/architecture/architecture.md#procedure-fixture-suite)
+for fixture-runner behavior and the [agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md#configured-project-changes)
 for how to run tests and prepare a candidate. The agent-to-human handoff is
 defined in this repository's `AGENTS.md`.

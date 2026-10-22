@@ -25,7 +25,7 @@ Versioned SQL defines the database structure. This directory explains its meanin
 
 `db-report` is the source of truth for this database's versioned objects. Stored
 procedure definitions and their SQL envelope are documented in
-[`../../procedures/procedures.md`](../../procedures/procedures.md).
+[`../procedures.md`](../procedures.md).
 
 # Database Architecture Map
 
