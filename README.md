@@ -1,35 +1,24 @@
 # db-report
 
-`db-report` is the human-facing source of truth for versioned database objects,
-database meaning, and safe use of the `db-workbench` TUI. The repository root is
-the `main` worktree; temporary task worktrees live below the ignored `.worktrees/`
-directory.
+`db-report` contains the versioned database objects and documentation for this
+database's meaning, relationships, and known limitations.
 
 ## Start here
 
 - Read the [data model and architecture](docs/architecture/architecture.md)
   before writing or changing SQL.
-- Read the [db-workbench workflows](docs/skills/using-db-workbench.md) for
-  querying, LOCAL refreshes, and the stored-procedure deployment lifecycle.
-- Use the [stored-procedure source guide](procedures/procedures.md) when adding
+- Use the [stored-procedure source guide](docs/procedures.md) when adding
   or reviewing a procedure.
 
 ## Versioned database objects
 
 - [Migrations](migrations/migrations.md)
-- [Stored procedures](procedures/procedures.md)
+- [Stored procedures](procedures/)
 - [Tables](tables/tables.md)
 - [Triggers](triggers/triggers.md)
 - [Views](views/views.md)
 
-Tool implementation belongs in `db-workbench`; credentials, query output, and
-production extracts must never be committed here. The db-workbench TUI owns the
-task-worktree lifecycle: after a clean procedure branch reaches `main`, it
-refreshes the remote state and removes the worktree and local branch, including
-the read-only directory cleanup required on Windows.
-
-The main-menu Delivery runner in `db-workbench` can select and push any
-db-report or db-workbench worktree, including a dirty repository-root `main`.
-It opens a foreground Windows Terminal tab with the PR conversation and diff,
-then offers squash merge or a Codex handback. Merge conflicts use the same
-session-preserving handback path.
+For query commands and human-operated delivery steps, see the
+[db-workbench README](https://github.com/schmijob/db-workbench/blob/main/README.md)
+and its [agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md).
+Never commit credentials, query output, or production extracts.
