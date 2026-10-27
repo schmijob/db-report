@@ -47,7 +47,7 @@ SELECT DATE_ADD(DATE(NOW()),INTERVAL 23 HOUR) INTO var_ende;
 if TIME_TO_SEC(timediff(var_jetzt,var_start)) > 0 AND TIME_TO_SEC(timediff(var_jetzt,var_ende)) < 0 then
 	#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	SELECT MAX(zf.filedate) INTO var_datum1 FROM tbl_import_personalakte AS zf;
-	SELECT MAX(kz.filedate) INTO var_datum2 FROM tbl_ueb_personalakte_current AS kz;
+	SELECT MAX(kz.filedate) INTO var_datum2 FROM tbl_ueb_personalakte AS kz;
 	if var_datum1 > var_datum2 and DATE(var_datum1) = DATE(NOW()) then
 	   call schreibe_log("proc_00_automatischer_uebertrag", "Step50.1", 0);
       CALL proc_uebertrag_personalakte();

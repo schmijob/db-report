@@ -52,8 +52,10 @@ defined in this repository's `AGENTS.md`.
 
 ## Personalakte SCD
 
-`proc_ueb_personalakte_scd_sync(p_gueltig_von)` records one normalized
-snapshot in compact intervals and, outside backfill, rebuilds the serving SCD.
+`proc_uebertrag_personalakte` records one normalized snapshot in compact
+intervals by calling `proc_ueb_personalakte_scd_snapshot_sync` and, outside
+backfill, rebuilds the serving SCD by calling
+`proc_ueb_personalakte_scd_reconcile`.
 The reconciler takes the latest `aenderungsdatum` for each effective date and
 field. If equally recent records disagree, a date value is invalid, or a
 change already present by the snapshot's `filedate` disagrees with that
@@ -61,11 +63,17 @@ snapshot, it uses the snapshot value for that field and records the conflict
 in `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive
 change remains authoritative over an older snapshot.
 
-For historical CSV replay, set `@personalakte_scd_backfill = 1`, truncate
-`tbl_ueb_personalakte_scd_snapshot` and `tbl_ueb_personalakte_scd`, then load
-each CSV into `tbl_import_personalakte` oldest to newest and call
-`proc_uebertrag_personalakte`. After the last snapshot, call
-`proc_ueb_personalakte_scd_reconcile()` and reset the flag to `0`. Backfill
-skips the current-day calendar side effects and delays reconciliation until the
-full snapshot range is loaded. `proc_uebertrag_aenderungen` also rebuilds the
-serving SCD after refreshing the change log.
+For historical CSV replay, load all files into
+`tbl_import_personalakte_scd_backfill`, which has the import schema. Do not
+replace the live `tbl_import_personalakte`: other procedures read it as the
+latest import. Clear `tbl_ueb_personalakte_scd_snapshot` and
+`tbl_ueb_personalakte_scd`, then set `@personalakte_scd_backfill = 1` and
+`@personalakte_scd_backfill_date` to each snapshot date, oldest to newest, and
+call `proc_uebertrag_personalakte` once per date. The procedure reads only that
+date from the staging table, skips current-day side effects, and defers
+reconciliation until replay is complete. Then call
+`proc_ueb_personalakte_scd_reconcile()` and clear both session variables.
+After confirming the backfill, truncate the staging table to remove the raw
+copies.
+`proc_uebertrag_aenderungen` also rebuilds the serving SCD after refreshing the
+change log.

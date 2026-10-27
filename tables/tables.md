@@ -40,9 +40,20 @@ meaning and approved usage in `docs/architecture/`.
 
 ## `tbl_ueb_personalakte_scd_reconciliation`
 
-- **Grain:** one unresolved change-log conflict per person, effective boundary,
+- **Grain:** one snapshot fallback decision per person, effective boundary,
   and field.
-- **Use:** identifies fields where equally recent change rows disagree, a
-  change date is invalid, or a change known at snapshot time disagrees with the
+- **Use:** inspect fields where equally recent change rows disagree, a change
+  date is invalid, or a change known at snapshot time disagrees with the
   snapshot. Reconciliation refreshes this table whenever it rebuilds the
   serving SCD.
+
+## `tbl_import_personalakte_scd_backfill`
+
+- **Grain:** source personalakte rows from historical CSV snapshots; the schema
+  matches `tbl_import_personalakte` and rows are distinguished by `filedate`.
+- **Keys:** non-unique indexes on `filedate` and `(pers_nr, filedate)` allow the
+  same person to appear in many snapshots.
+- **Use:** isolated staging input for the historical replay. Never load historic
+  rows into `tbl_import_personalakte`, which remains the latest import used by
+  other procedures. Truncate this staging table after reviewing a successful
+  backfill.

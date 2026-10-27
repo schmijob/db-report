@@ -101,6 +101,9 @@ tbl_import_personalakte
         |
         v
 proc_uebertrag_personalakte
+        ^
+        |
+tbl_import_personalakte_scd_backfill (historical replay only)
         |
         +-> tbl_ueb_personalakte_scd_snapshot (compact snapshot fallback intervals)
         |                |
@@ -112,9 +115,9 @@ proc_uebertrag_personalakte
                                       +-> tbl_ueb_personalakte_scd
                                               +-> date-sensitive internal consumers
         |
-        +-> tbl_ueb_personalakte_current (one current row per person)
+        +-> tbl_ueb_personalakte_current (materialized current row per person)
                 +-> tbl_ueb_personalakte compatibility view
-                        +-> vp_personal_u compatibility view
+                        +-> vp_personal_u (current-personnel view)
                         +-> external consumers
 ```
 
@@ -131,9 +134,10 @@ snapshot value for that field and records the conflict in
 `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive change
 is resolved in favor of the change log.
 
-`tbl_ueb_personalakte` and `vp_personal_u` retain their one-row-per-person
-current projection for compatibility. Internal date-sensitive queries should
-use `tbl_ueb_personalakte_scd`.
+`tbl_ueb_personalakte_current` remains the materialized one-row-per-person
+current projection. `tbl_ueb_personalakte` and `vp_personal_u` preserve the
+existing current-state access paths. Internal date-sensitive queries should use
+`tbl_ueb_personalakte_scd`.
 
 ## Logging / Infrastructure
 
@@ -243,13 +247,13 @@ tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
 tbl_ueb_personalakte_current
         |
         +-> tbl_ueb_personalakte (compatibility view)
-                +-> vp_personal_u (compatibility view)
+                +-> vp_personal_u
 ```
 
 Common access view:
 
-`tbl_ueb_personalakte_current` remains the current-state backing table used by
-the compatibility views. Do not use it for date-sensitive analysis.
+`tbl_ueb_personalakte_current` remains the current-state materialized table
+used by the compatibility views. Do not use it for date-sensitive analysis.
 Mapping taetigkeit to categories:
 `tbl_stamm_kategorie_abteilung`
 

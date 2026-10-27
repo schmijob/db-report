@@ -5,14 +5,13 @@ upgrade or rollback step. Keep deployment tooling in `db-workbench`.
 
 ## `20261026_personalakte_scd.sql`
 
-Renames the existing one-row-per-person table to
-`tbl_ueb_personalakte_current`, creates the compact snapshot baseline and the
-reconciled `tbl_ueb_personalakte_scd`, and records unresolved change/snapshot conflicts in
-`tbl_ueb_personalakte_scd_reconciliation`. It seeds both interval tables from
-the current snapshot, then restores `tbl_ueb_personalakte` and `vp_personal_u`
-as compatibility views. This is a one-time migration and must run before
-deploying procedures that reference the SCD table. Keep the current backing
-table during the compatibility period.
+Keeps the existing materialized one-row-per-person table, creates the compact
+snapshot baseline, the reconciled `tbl_ueb_personalakte_scd`, the reconciliation
+inspection table, and a separate import-schema staging table for historical
+CSVs. It seeds both interval tables from the current snapshot and recreates the
+legacy `tbl_ueb_personalakte` and `vp_personal_u` views over the materialized
+current table. This is a one-time migration and must run before deploying
+procedures that reference the SCD table.
 
 Apply the view definitions under `views/` after the migration. In particular,
 the cluster and attendance views no longer reconstruct OE/activity from the
@@ -20,9 +19,12 @@ change log for each read; they join the materialized personalakte version by
 the fact date.
 
 The migration cannot supply historical coverage. When daily CSV snapshots are
-available, clear the two interval tables and replay the files oldest to newest
-through `tbl_import_personalakte` with `@personalakte_scd_backfill = 1`. Then
-call `proc_ueb_personalakte_scd_reconcile()` and clear the session flag. The
-snapshot baseline coalesces identical adjacent states; the serving table adds
-only boundaries where a resolved business value changes. Neither stores one
-row per person per day.
+available, load them into `tbl_import_personalakte_scd_backfill`, not the live
+`tbl_import_personalakte`. Clear the two interval tables, set
+`@personalakte_scd_backfill = 1`, and replay each date oldest to newest by
+setting `@personalakte_scd_backfill_date` and calling
+`proc_uebertrag_personalakte`. Reconcile once after replay, then clear both
+session variables and truncate the staging table after reviewing the result.
+The snapshot baseline coalesces identical adjacent states;
+the serving table adds only boundaries where a resolved business value changes.
+Neither stores one row per person per day.

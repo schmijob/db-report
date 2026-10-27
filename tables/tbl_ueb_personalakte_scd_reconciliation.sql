@@ -1,4 +1,4 @@
--- Rebuilt on each reconciliation; stores only unresolved event conflicts.
+-- Rebuilt on each reconciliation; stores fields resolved from snapshot fallback.
 CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd_reconciliation` (
   `persnr` int(13) NOT NULL,
   `datum` date NOT NULL,

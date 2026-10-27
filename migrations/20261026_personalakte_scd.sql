@@ -1,10 +1,19 @@
--- One-time schema migration. Keep this current-state backing table for legacy
--- consumers and writers; internal date-sensitive consumers use the SCD table.
+-- Keep the materialized current-state table for existing consumers and writers.
+-- Date-sensitive consumers use the separate SCD table.
 RENAME TABLE `tbl_ueb_personalakte` TO `tbl_ueb_personalakte_current`;
 
 CREATE TABLE `tbl_ueb_personalakte_scd` LIKE `tbl_ueb_personalakte_current`;
 
 CREATE TABLE `tbl_ueb_personalakte_scd_snapshot` LIKE `tbl_ueb_personalakte_current`;
+
+-- Historical CSVs are loaded here so the live latest-snapshot import is not
+-- overwritten during backfill.
+CREATE TABLE `tbl_import_personalakte_scd_backfill` AS
+SELECT * FROM `tbl_import_personalakte` WHERE 1 = 0;
+
+ALTER TABLE `tbl_import_personalakte_scd_backfill`
+  ADD KEY `ix_personalakte_scd_backfill_filedate` (`filedate`),
+  ADD KEY `ix_personalakte_scd_backfill_person_filedate` (`pers_nr`, `filedate`);
 
 ALTER TABLE `tbl_ueb_personalakte_scd`
   ADD COLUMN `gueltig_von` date NOT NULL,

@@ -5,9 +5,50 @@ CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte`()
 SQL SECURITY DEFINER BEGIN
     DECLARE var_filedate DATETIME;
     DECLARE var_maxdate DATE;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
+    CREATE TEMPORARY TABLE tmp_personalakte_import LIKE tbl_import_personalakte;
+
+    IF COALESCE(@personalakte_scd_backfill, 0) = 1 THEN
+        IF @personalakte_scd_backfill_date IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Set @personalakte_scd_backfill_date before replaying a personalakte snapshot';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+              FROM tbl_import_personalakte_scd_backfill
+             WHERE filedate >= DATE(@personalakte_scd_backfill_date)
+               AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY)
+        ) THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'No staged personalakte snapshot exists for the requested date';
+        END IF;
+
+        IF EXISTS (
+            SELECT pers_nr
+              FROM tbl_import_personalakte_scd_backfill
+             WHERE filedate >= DATE(@personalakte_scd_backfill_date)
+               AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY)
+             GROUP BY pers_nr
+            HAVING COUNT(*) > 1
+        ) THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A staged personalakte snapshot contains duplicate personnel numbers';
+        END IF;
+
+        INSERT INTO tmp_personalakte_import
+        SELECT *
+          FROM tbl_import_personalakte_scd_backfill
+         WHERE filedate >= DATE(@personalakte_scd_backfill_date)
+           AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY);
+    ELSE
+        INSERT INTO tmp_personalakte_import
+        SELECT * FROM tbl_import_personalakte;
+    END IF;
     
     -- Prüfung, ob neue Änderungen vorhanden sind
-    SELECT MAX(filedate) INTO var_filedate FROM tbl_import_personalakte imp;
+    SELECT MAX(filedate) INTO var_filedate FROM tmp_personalakte_import imp;
     SELECT MAX(datum) INTO var_maxdate FROM tbl_datum;
     
 	 IF var_filedate IS NOT NULL
@@ -42,7 +83,7 @@ SQL SECURITY DEFINER BEGIN
 					END AS ende_besch
 				 , p.taetigkeit2
 				 , p.funktion
-			 FROM tbl_import_personalakte p
+			 FROM tmp_personalakte_import p
 		--	 LEFT JOIN tbl_uebertrag_aenderungen_beginn_ende b ON p.pers_nr = b.persnr
 			 WHERE p.ende_besch IS NOT NULL AND p.ende_besch <> '2022-07-31'
 		    AND beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
@@ -107,9 +148,10 @@ SQL SECURITY DEFINER BEGIN
 
 		;
 
-		CALL proc_ueb_personalakte_scd_sync(DATE(var_filedate));
+		CALL proc_ueb_personalakte_scd_snapshot_sync(DATE(var_filedate));
 
 		IF COALESCE(@personalakte_scd_backfill, 0) = 0 THEN
+			CALL proc_ueb_personalakte_scd_reconcile();
 				
 				
 				-- übernommene ZAK aus Verlängerungsliste (=tbl_stamm_persnr ersetzt Ende Beschäftigung) löschen
@@ -118,7 +160,7 @@ SQL SECURITY DEFINER BEGIN
 		WHERE p.`übernahme` = 1;
 				-- Geplante Verlängerungen aus Verlängerungsliste löschen
 		DELETE s FROM tbl_stamm_persnr s
-		LEFT JOIN tbl_import_personalakte p ON s.persnr = p.pers_nr
+		LEFT JOIN tmp_personalakte_import p ON s.persnr = p.pers_nr
 		WHERE p.ende_besch = s.ende;
 		
 		-- neue MA aus Personalakte in Buchungen anlegen
@@ -167,7 +209,7 @@ SQL SECURITY DEFINER BEGIN
 		     , IF(d.arbeitstag = 1, '*', '')
 		     , p.filedate
 		  FROM tbl_ueb_personalakte_scd s
-		  JOIN tbl_import_personalakte p ON p.pers_nr = s.persnr
+		  JOIN tmp_personalakte_import p ON p.pers_nr = s.persnr
 		  JOIN tbl_datum d ON d.datum BETWEEN NULLIF(p.ende_besch, '9999-12-31') + INTERVAL 1 DAY
 		                                  AND s.ende
 		                  AND d.datum BETWEEN s.gueltig_von AND s.gueltig_bis
@@ -218,4 +260,5 @@ SQL SECURITY DEFINER BEGIN
 		END IF;
 			 	
 	END IF;
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
 END//

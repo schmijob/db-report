@@ -25,14 +25,15 @@ SQL SECURITY DEFINER BEGIN
            gueltig_bis,
            filedate
       FROM tbl_uebertrag_aenderungen_werte
-     WHERE beschreibung NOT LIKE (CONVERT(0x2847656CC3B6736368742925 USING utf8mb4) COLLATE utf8mb4_unicode_ci)
-       AND CAST(feld AS BINARY) IN (
-             0x4E6163686E616D65, 0x566F726E616D65
-           , 0x4F7267616E69736174696F6E7365696E686569742064657220506572736F6E
-           , 0x31302053636869636874, 0x496E666F2032, 0x3133205465616D, 0x4265747269656273726174
-           , 0x426567696E6E204265736368C3A466746967756E67
-           , 0x456E6465204265736368C3A466746967756E67
-           , 0x54C3A47469676B656974, 0x31342054C3A47469676B656974
+     WHERE CONVERT(beschreibung USING utf8mb4) COLLATE utf8mb4_unicode_ci
+               NOT LIKE _utf8mb4'(Gelöscht)%' COLLATE utf8mb4_unicode_ci
+       AND CONVERT(feld USING utf8mb4) COLLATE utf8mb4_unicode_ci IN (
+             _utf8mb4'Nachname', _utf8mb4'Vorname'
+           , _utf8mb4'Organisationseinheit der Person'
+           , _utf8mb4'10 Schicht', _utf8mb4'Info 2', _utf8mb4'13 Team', _utf8mb4'Betriebsrat'
+           , _utf8mb4'Beginn Beschäftigung'
+           , _utf8mb4'Ende Beschäftigung'
+           , _utf8mb4'Tätigkeit', _utf8mb4'14 Tätigkeit'
        );
     ALTER TABLE tmp_pa_scd_events
       ADD KEY ix_tmp_pa_scd_events_person_date (persnr, gueltig_von, gueltig_bis, feld);
@@ -153,18 +154,18 @@ SQL SECURITY DEFINER BEGIN
            MAX(CASE WHEN feld = 'Info 2' THEN event_value END) AS value_eg,
            MAX(CASE WHEN feld = 'Info 2' THEN event_values END) AS values_eg,
            MAX(CASE WHEN feld = 'Info 2' THEN event_filedate END) AS filedate_eg,
-           MAX(CASE WHEN feld = (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_beginn,
-           MAX(CASE WHEN feld = (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_beginn,
-           MAX(CASE WHEN feld = (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_beginn,
-           MAX(CASE WHEN feld = (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_beginn,
-           MAX(CASE WHEN feld = (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_ende,
-           MAX(CASE WHEN feld = (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_ende,
-           MAX(CASE WHEN feld = (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_ende,
-           MAX(CASE WHEN feld = (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_ende,
-           MAX(CASE WHEN feld = (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_taetigkeit,
-           MAX(CASE WHEN feld = (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_taetigkeit,
-           MAX(CASE WHEN feld = (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_taetigkeit,
-           MAX(CASE WHEN feld = (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_taetigkeit,
+           MAX(CASE WHEN feld = (_utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_beginn,
+           MAX(CASE WHEN feld = (_utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_beginn,
+           MAX(CASE WHEN feld = (_utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_beginn,
+           MAX(CASE WHEN feld = (_utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_beginn,
+           MAX(CASE WHEN feld = (_utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_ende,
+           MAX(CASE WHEN feld = (_utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_ende,
+           MAX(CASE WHEN feld = (_utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_ende,
+           MAX(CASE WHEN feld = (_utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_ende,
+           MAX(CASE WHEN feld = (_utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_taetigkeit,
+           MAX(CASE WHEN feld = (_utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_taetigkeit,
+           MAX(CASE WHEN feld = (_utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_taetigkeit,
+           MAX(CASE WHEN feld = (_utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_taetigkeit,
            MAX(CASE WHEN feld = '13 Team' THEN value_count END) AS cnt_team,
            MAX(CASE WHEN feld = '13 Team' THEN event_value END) AS value_team,
            MAX(CASE WHEN feld = '13 Team' THEN event_values END) AS values_team,
@@ -173,10 +174,10 @@ SQL SECURITY DEFINER BEGIN
            MAX(CASE WHEN feld = 'Betriebsrat' THEN event_value END) AS value_br,
            MAX(CASE WHEN feld = 'Betriebsrat' THEN event_values END) AS values_br,
            MAX(CASE WHEN feld = 'Betriebsrat' THEN event_filedate END) AS filedate_br,
-           MAX(CASE WHEN feld = (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_taetigkeit2,
-           MAX(CASE WHEN feld = (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_taetigkeit2,
-           MAX(CASE WHEN feld = (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_taetigkeit2,
-           MAX(CASE WHEN feld = (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_taetigkeit2
+           MAX(CASE WHEN feld = (_utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN value_count END) AS cnt_taetigkeit2,
+           MAX(CASE WHEN feld = (_utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_value END) AS value_taetigkeit2,
+           MAX(CASE WHEN feld = (_utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_values END) AS values_taetigkeit2,
+           MAX(CASE WHEN feld = (_utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci) THEN event_filedate END) AS filedate_taetigkeit2
       FROM tmp_pa_scd_values
      GROUP BY persnr, boundary_date;
     ALTER TABLE tmp_pa_scd_wide
@@ -214,19 +215,19 @@ SQL SECURITY DEFINER BEGIN
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
      WHERE w.cnt_eg > 1
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.beginn AS CHAR), w.values_beginn,
            'Conflicting latest aenderungen values; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
      WHERE w.cnt_beginn > 1
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.ende AS CHAR), w.values_ende,
            'Conflicting latest aenderungen values; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
      WHERE w.cnt_ende > 1
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci,
            CAST(s.taetigkeit AS CHAR), w.values_taetigkeit,
            'Conflicting latest aenderungen values; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -244,13 +245,13 @@ SQL SECURITY DEFINER BEGIN
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
      WHERE w.cnt_br > 1
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci,
            CAST(s.taetigkeit2 AS CHAR), w.values_taetigkeit2,
            'Conflicting latest aenderungen values; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
      WHERE w.cnt_taetigkeit2 > 1
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.beginn AS CHAR), w.values_beginn,
            'Invalid aenderungen date; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -259,7 +260,7 @@ SQL SECURITY DEFINER BEGIN
        AND COALESCE(STR_TO_DATE(LEFT(w.value_beginn, 10), '%d.%m.%Y'),
                     STR_TO_DATE(LEFT(w.value_beginn, 10), '%Y-%m-%d')) IS NULL
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.ende AS CHAR), w.values_ende,
            'Invalid aenderungen date; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -308,7 +309,7 @@ SQL SECURITY DEFINER BEGIN
        AND (w.filedate_eg IS NULL OR s.filedate IS NULL OR w.filedate_eg <= s.filedate)
        AND NOT (w.value_eg <=> s.eg)
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x426567696E6E204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Beginn Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.beginn AS CHAR), w.values_beginn,
            'Snapshot disagrees with aenderungen already known at filedate; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -320,7 +321,7 @@ SQL SECURITY DEFINER BEGIN
                       ELSE COALESCE(STR_TO_DATE(LEFT(w.value_beginn, 10), '%d.%m.%Y'),
                                     STR_TO_DATE(LEFT(w.value_beginn, 10), '%Y-%m-%d')) END) <=> s.beginn)
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x456E6465204265736368C3A466746967756E67 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Ende Beschäftigung' COLLATE utf8mb4_unicode_ci,
            CAST(s.ende AS CHAR), w.values_ende,
            'Snapshot disagrees with aenderungen already known at filedate; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -332,7 +333,7 @@ SQL SECURITY DEFINER BEGIN
                       ELSE COALESCE(STR_TO_DATE(LEFT(w.value_ende, 10), '%d.%m.%Y'),
                                     STR_TO_DATE(LEFT(w.value_ende, 10), '%Y-%m-%d')) END) <=> s.ende)
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x54C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'Tätigkeit' COLLATE utf8mb4_unicode_ci,
            CAST(s.taetigkeit AS CHAR), w.values_taetigkeit,
            'Snapshot disagrees with aenderungen already known at filedate; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
@@ -356,7 +357,7 @@ SQL SECURITY DEFINER BEGIN
        AND (w.filedate_br IS NULL OR s.filedate IS NULL OR w.filedate_br <= s.filedate)
        AND NOT (w.value_br <=> s.br)
     UNION ALL
-    SELECT s.persnr, s.boundary_date, (CONVERT(0x31342054C3A47469676B656974 USING utf8mb4) COLLATE utf8mb4_unicode_ci),
+    SELECT s.persnr, s.boundary_date, _utf8mb4'14 Tätigkeit' COLLATE utf8mb4_unicode_ci,
            CAST(s.taetigkeit2 AS CHAR), w.values_taetigkeit2,
            'Snapshot disagrees with aenderungen already known at filedate; snapshot fallback'
       FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
