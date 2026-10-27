@@ -70,11 +70,11 @@ or another ignored folder under `.worktrees` or `consumers`. Run
 to validate the complete files. The script locates the report header by its
 labels while retaining empty separator columns. The `PersNr` header is needed
 to locate the mutable, nullable personnel number; rows with a blank `PersNr`
-are excluded after checking the source row count against the footer. Every
-other source column may be absent, and absent columns and blank cells are
-emitted as SQL `NULL`. It uses `Druckdatum` for `filedate` and the preprocessing
-time for `lastinsertupdate`, and checks dates and duplicate nonblank personnel
-numbers within each snapshot. `--structure-only
+are excluded. The `Anzahl Personen` footer row is discarded without using its
+count. Every other source column may be absent, and absent columns and blank
+cells are emitted as SQL `NULL`. It uses `Druckdatum` for `filedate` and the
+preprocessing time for `lastinsertupdate`, and checks dates and duplicate
+nonblank personnel numbers within each snapshot. `--structure-only
 --validate-only` checks the file layout when a sample has had person values
 removed; it does not validate cell values.
 After validation, run the script once more with `--output <path>` under

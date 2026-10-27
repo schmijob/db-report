@@ -101,6 +101,7 @@ class Snapshot:
     printed_at: datetime
     sha256: str
     row_count: int
+    source_row_count: int
     skipped_null_persnr: int = 0
 
 
@@ -110,7 +111,6 @@ class ParsedReport:
     rows: list[list[str]]
     header_index: int
     footer_index: int
-    footer_count: int
     header_indices: dict[str, int]
     delimiter: str
 
@@ -215,17 +215,13 @@ def parse_datetime(value: str, path: Path, field: str = "Druckdatum") -> datetim
     raise ReportError(f"{path.name}: {field} has an unsupported date format")
 
 
-def parse_footer_count(rows: list[list[str]], header_index: int, path: Path) -> tuple[int, int]:
+def find_footer_index(rows: list[list[str]], header_index: int) -> int:
     for row_index in range(header_index + 1, len(rows)):
         row = rows[row_index]
         for index, cell in enumerate(row):
             if normalize_label(cell).startswith("anzahl personen"):
-                value = next((part.strip() for part in row[index + 1 :] if part.strip()), "")
-                digits = re.sub(r"[^0-9]", "", value)
-                if not digits:
-                    raise ReportError(f"{path.name}: footer person count has no numeric value")
-                return row_index, int(digits)
-    raise ReportError(f"{path.name}: 'Anzahl Personen' footer wasn't found")
+                return row_index
+    return len(rows)
 
 
 def parse_person_number(value: str, path: Path, row_number: int) -> int | None:
@@ -258,11 +254,6 @@ def structural_data_row_count(report: ParsedReport, path: Path) -> int:
         if len(row) > width and any(cell.strip() for cell in row[width:]):
             raise ReportError(f"{path.name}: extra CSV fields on row {row_index + 1}")
         row_count += 1
-    if row_count != report.footer_count:
-        raise ReportError(
-            f"{path.name}: footer says {report.footer_count} people, "
-            f"but {row_count} structurally valid data rows were parsed"
-        )
     return row_count
 
 
@@ -270,7 +261,7 @@ def normalized_data_rows(
     report: ParsedReport,
     path: Path,
     lastinsertupdate: str | None = None,
-) -> list[list[str | int | None]]:
+) -> tuple[list[list[str | int | None]], int, int]:
     if lastinsertupdate is None:
         lastinsertupdate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     width = len(report.rows[report.header_index])
@@ -278,6 +269,7 @@ def normalized_data_rows(
     seen: set[int] = set()
     normalized_rows: list[list[str | int | None]] = []
     source_row_count = 0
+    skipped_null_persnr = 0
 
     for row_index in range(report.header_index + 1, report.footer_index):
         row = report.rows[row_index]
@@ -297,6 +289,7 @@ def normalized_data_rows(
 
         person_number = parse_person_number(row[person_index], path, row_index + 1)
         if person_number is None:
+            skipped_null_persnr += 1
             continue
         if person_number in seen:
             raise ReportError(f"{path.name}: duplicate PersNr. on CSV row {row_index + 1}")
@@ -321,33 +314,29 @@ def normalized_data_rows(
         # TSV LOAD DATA uses \N as SQL NULL. A literal backslash-N is doubled.
         normalized_rows.append(list(values.values()))
 
-    if source_row_count != report.footer_count:
-        raise ReportError(
-            f"{path.name}: footer says {report.footer_count} people, "
-            f"but {source_row_count} source rows were parsed"
-        )
-    return normalized_rows
+    return normalized_rows, source_row_count, skipped_null_persnr
 
 
 def parse_report(
     path: Path,
     text: str | None = None,
     lastinsertupdate: str | None = None,
-) -> tuple[ParsedReport, list[list[str | int | None]]]:
+) -> tuple[ParsedReport, list[list[str | int | None]], int, int]:
     rows, header_index, header_indices, delimiter = load_rows_and_header(path, text)
     printed_at = parse_printed_at(rows, header_index, path)
-    footer_index, footer_count = parse_footer_count(rows, header_index, path)
+    footer_index = find_footer_index(rows, header_index)
     report = ParsedReport(
         printed_at=printed_at,
         rows=rows,
         header_index=header_index,
         footer_index=footer_index,
-        footer_count=footer_count,
         header_indices=header_indices,
         delimiter=delimiter,
     )
-    normalized_rows = normalized_data_rows(report, path, lastinsertupdate)
-    return report, normalized_rows
+    normalized_rows, source_row_count, skipped_null_persnr = normalized_data_rows(
+        report, path, lastinsertupdate
+    )
+    return report, normalized_rows, source_row_count, skipped_null_persnr
 
 
 def inspect_snapshot(path: Path, structure_only: bool = False) -> Snapshot:
@@ -357,28 +346,27 @@ def inspect_snapshot(path: Path, structure_only: bool = False) -> Snapshot:
     if structure_only:
         rows, header_index, header_indices, delimiter = load_rows_and_header(path, text)
         printed_at = parse_printed_at(rows, header_index, path)
-        footer_index, footer_count = parse_footer_count(rows, header_index, path)
+        footer_index = find_footer_index(rows, header_index)
         report = ParsedReport(
             printed_at=printed_at,
             rows=rows,
             header_index=header_index,
             footer_index=footer_index,
-            footer_count=footer_count,
             header_indices=header_indices,
             delimiter=delimiter,
         )
         row_count = structural_data_row_count(report, path)
-    else:
-        report, normalized_rows = parse_report(path, text)
-        row_count = len(normalized_rows)
-        skipped_null_persnr = report.footer_count - row_count
-    if structure_only:
+        source_row_count = row_count
         skipped_null_persnr = 0
+    else:
+        report, normalized_rows, source_row_count, skipped_null_persnr = parse_report(path, text)
+        row_count = len(normalized_rows)
     return Snapshot(
         path=path,
         printed_at=printed_at if structure_only else report.printed_at,
         sha256=digest,
         row_count=row_count,
+        source_row_count=source_row_count,
         skipped_null_persnr=skipped_null_persnr,
     )
 
@@ -460,7 +448,7 @@ def write_prepared_file(snapshots: list[Snapshot], output: Path) -> int:
                         f"{snapshot.path.name}: file changed after validation; rerun preprocessing"
                     )
                 text = decode_report_bytes(raw, snapshot.path)
-                _, rows = parse_report(snapshot.path, text, prepared_at)
+                _, rows, _, _ = parse_report(snapshot.path, text, prepared_at)
                 for row in rows:
                     temp.write("\t".join(escape_load_data(value) for value in row) + "\n")
                 total_rows += len(rows)
@@ -505,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--structure-only",
         action="store_true",
-        help="With --validate-only, check headers, row widths, Druckdatum, and footer count; skip cell-value checks",
+        help="With --validate-only, check headers, row widths, and Druckdatum; skip cell-value checks",
     )
     args = parser.parse_args(argv)
 
@@ -524,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         snapshots = [inspect_snapshot(path, structure_only=args.structure_only) for path in files]
         selected, dropped = choose_snapshots(snapshots, args.latest_per_day)
         total_rows = sum(snapshot.row_count for snapshot in selected)
+        total_source_rows = sum(snapshot.source_row_count for snapshot in selected)
         skipped_null_persnr = sum(snapshot.skipped_null_persnr for snapshot in selected)
         output = args.output or args.input_dir.parent / "prepared_personalakte_backfill.tsv"
         if not args.validate_only:
@@ -537,15 +526,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Snapshots selected: {len(selected)}")
         print(f"Exact duplicates or superseded same-day files: {dropped}")
         if args.structure_only:
-            print(f"Source rows validated against footer: {total_rows}")
+            print(f"Data rows before PersNr filtering: {total_source_rows}")
         else:
             print(f"Person rows prepared: {total_rows}")
+            print(f"Data rows before PersNr filtering: {total_source_rows}")
             print(f"Rows skipped for blank PersNr.: {skipped_null_persnr}")
         print(f"Druckdatum date range: {first_date} through {last_date}")
         if args.structure_only:
-            print("Headers, Druckdatum, row widths, and footer counts: valid; cell values were not checked")
+            print("Headers, Druckdatum, and row widths checked; cell values were not checked; footer excluded")
         else:
-            print("Footer counts, row widths, PersNr. header, dates, and duplicate nonblank PersNr. values: valid")
+            print("Row widths, PersNr. header, dates, and duplicate nonblank PersNr. values checked; footer excluded")
         if args.validate_only:
             print("Validation only; no prepared file was written.")
         else:
