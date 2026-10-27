@@ -417,21 +417,21 @@ def choose_snapshots(snapshots: list[Snapshot], latest_per_day: bool) -> tuple[l
     return selected, dropped
 
 
-def ensure_output_outside_repo(output: Path) -> None:
+def ensure_output_in_untracked_area(output: Path) -> None:
     resolved_output = output.resolve()
-    source_path = Path(__file__).resolve()
-    repo_roots = [parent for parent in source_path.parents if (parent / ".git").exists()]
-    if any(
-        resolved_output == root or root in resolved_output.parents
-        for root in repo_roots
-    ):
+    repo_roots = [parent for parent in Path(__file__).resolve().parents if (parent / ".git").is_dir()]
+    if not repo_roots:
+        raise ReportError("Couldn't find the repository root; choose an output path under .worktrees or consumers")
+    repo_root = repo_roots[-1]
+    allowed_roots = (repo_root / ".worktrees", repo_root / "consumers")
+    if not any(resolved_output == root or root in resolved_output.parents for root in allowed_roots):
         raise ReportError(
-            "The prepared file contains personal data; choose an output path outside the repository"
+            "The prepared file contains personal data; choose a path under the repository's .worktrees or consumers folder"
         )
 
 
 def write_prepared_file(snapshots: list[Snapshot], output: Path) -> int:
-    ensure_output_outside_repo(output)
+    ensure_output_in_untracked_area(output)
     if output.resolve() in {snapshot.path.resolve() for snapshot in snapshots}:
         raise ReportError("Output path matches an input CSV; choose a separate TSV path")
     output.parent.mkdir(parents=True, exist_ok=True)

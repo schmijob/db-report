@@ -63,19 +63,21 @@ snapshot, it uses the snapshot value for that field and records the conflict
 in `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive
 change remains authoritative over an older snapshot.
 
-For historical CSV replay, first export the `Personalliste ALL.csv`
-attachments into a folder outside the repository. Run
+For historical CSV replay, export the `Personalliste ALL.csv` attachments with
+the Outlook macro to `C:\db-report\.worktrees\personalakte-backfill\raw`
+or another ignored folder under `.worktrees` or `consumers`. Run
 `python scripts/prepare_personalliste_backfill.py <raw-folder> --validate-only`
 to validate the complete files. The script locates the report header by its
 labels while retaining empty separator columns, reads the `Druckdatum` value
 for `filedate`, and checks the footer count, dates, and duplicate personnel
 numbers. `--structure-only --validate-only` checks the file layout when a
 sample has had person values removed; it does not validate cell values.
-After validation, run the script once more with `--output <path-outside-repo>`
-to create one consolidated TSV. It fails on conflicting snapshots for one
-date unless `--latest-per-day` is explicitly selected. Load only that prepared
-file once into `tbl_import_personalakte_scd_backfill`; the raw attachments do
-not need to be uploaded or loaded separately.
+After validation, run the script once more with `--output <path>` under
+`.worktrees` or `consumers` to create one consolidated TSV. The default output
+is beside the raw folder. It fails on conflicting snapshots for one date unless
+`--latest-per-day` is explicitly selected. Load only that prepared file once
+into `tbl_import_personalakte_scd_backfill`; the raw attachments do not need to
+be uploaded or loaded separately.
 
 For procedure tests, use small synthetic people and snapshot dates in the
 procedure fixture suite under
