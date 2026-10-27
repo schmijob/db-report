@@ -48,6 +48,15 @@ IF NOT EXISTS (SELECT 1 FROM tbl_ueb_buchungen WHERE filedate = var_datum1) THEN
 END IF;
 
 
+-- Änderungen müssen vor beiden FZ-Ausgabepfaden übertragen sein.
+SELECT last_insert_update INTO var_datum1 FROM tbl_import_aenderungen imp LIMIT 1;
+IF NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen WHERE last_insert_update > var_datum1) THEN
+	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_aenderungen start", 0);
+	CALL proc_uebertrag_aenderungen();
+	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_aenderungen ende", ROW_COUNT());
+END IF;
+
+
 -- alles Zusammenfügen in tbl_ueb_fz_buchungen
 
 IF NOT EXISTS (
@@ -58,8 +67,8 @@ IF NOT EXISTS (
 	   AND zeitstempel > NOW() - INTERVAL 15 MINUTE
 	           )
 THEN
-	SET @mindate2 = NULL;
-	SET @maxdate2 = NULL;
+	SET @mindate2 = CURDATE() - INTERVAL 1 DAY;
+	SET @maxdate2 = CURDATE() + INTERVAL 1 DAY;
 	-- Zeitraum bei Aktualisierung Buchungen
 	SELECT MAX(last_insert_update) INTO var_datum1 FROM tbl_ueb_buchungen;
 	IF NOT EXISTS (SELECT 1 FROM tbl_ueb_fz_buchungen WHERE datum = CURDATE() - INTERVAL 1 DAY and last_insert_update > var_datum1 LIMIT 1) THEN
@@ -83,6 +92,18 @@ THEN
 		SET @mindate2 = LEAST(IFNULL(@mindate2, CURDATE()), CURDATE() - INTERVAL 3 DAY);
 		SET @maxdate2 = GREATEST(IFNULL(@maxdate2, CURDATE()), last_day(CURDATE() + INTERVAL 2 MONTH));
 		CALL schreibe_log("proc_00_personalplanung", CONCAT("personal", @mindate2, " - ", @maxdate2), 0);  
+	END IF;
+
+	-- Rebuild both paths for source-dirty days as well as the time-sensitive current/next production day.
+	SELECT MIN(datum)
+	     , MAX(datum)
+	  INTO var_datum1
+	     , var_datum2
+	  FROM tbl_ueb_fz_join
+	 WHERE last_insert_update > IFNULL(last_calculated, '1000-01-01 00:00:00');
+	IF var_datum1 IS NOT NULL THEN
+		SET @mindate2 = LEAST(@mindate2, DATE(var_datum1));
+		SET @maxdate2 = GREATEST(@maxdate2, DATE(var_datum2));
 	END IF;
 	
 IF @mindate2 IS NOT NULL THEN
@@ -115,22 +136,12 @@ IF @mindate2 IS NOT NULL THEN
          CALL schreibe_log("proc_00_personalplanung", "proc_ueb_fz_buchungen batch 3 ende", ROW_COUNT());
     END IF;
 
+	CALL schreibe_log("proc_00_personalplanung", "proc_ueb_fz_join start", 0);
+	CALL proc_ueb_fz_join();
+	CALL schreibe_log("proc_00_personalplanung", "proc_ueb_fz_join ende", ROW_COUNT());
+
 END IF;
 END IF;
-
--- Änderungen
-
-SELECT last_insert_update INTO var_datum1 FROM tbl_import_aenderungen imp LIMIT 1;
-IF NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen WHERE last_insert_update > var_datum1) THEN
-	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_aenderungen start", 0);  
-	CALL proc_uebertrag_aenderungen();
-	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_aenderungen ende", ROW_COUNT());
-END IF;
-
--- join
-CALL schreibe_log("proc_00_personalplanung", "proc_ueb_fz_join start", 0);
-CALL proc_ueb_fz_join();
-CALL schreibe_log("proc_00_personalplanung", "proc_ueb_fz_join ende", ROW_COUNT());
 -- CALL proc_uebertrag_fanf();
 
 -- Forecast

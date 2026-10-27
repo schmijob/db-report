@@ -270,16 +270,16 @@ IF TRUE OR NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen_fehlzeiten ueb WH
 	  GROUP BY persnr
 	         , datum
 	ON DUPLICATE KEY UPDATE
-	       aend_fz = VALUES(aend_fz)
-	     , aend_tp = VALUES(aend_tp)
-	     , aend_filedate = VALUES(aend_filedate)
-	     , last_insert_update = CASE
+	       last_insert_update = CASE
 	                                WHEN NOT (tbl_ueb_fz_join.aend_fz <=> VALUES(aend_fz))
 	                                  OR NOT (tbl_ueb_fz_join.aend_tp <=> VALUES(aend_tp))
 	                                  OR NOT (tbl_ueb_fz_join.aend_filedate <=> VALUES(aend_filedate))
 	                                THEN VALUES(last_insert_update)
 	                                ELSE tbl_ueb_fz_join.last_insert_update
 	                            END
+	     , aend_fz = VALUES(aend_fz)
+	     , aend_tp = VALUES(aend_tp)
+	     , aend_filedate = VALUES(aend_filedate)
 	;	
 
 

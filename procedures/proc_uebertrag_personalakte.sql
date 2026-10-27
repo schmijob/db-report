@@ -135,15 +135,19 @@ SQL SECURITY DEFINER BEGIN
 		       ) x
 		
 		ON DUPLICATE KEY UPDATE
-		      pa_fz               = VALUES(pa_fz)
+		      last_insert_update  = IF(    NOT (tbl_ueb_fz_join.pa_fz <=> VALUES(pa_fz))
+										  OR NOT (tbl_ueb_fz_join.pa_taetigkeit <=> VALUES(pa_taetigkeit))
+									  OR NOT (tbl_ueb_fz_join.pa_oe <=> VALUES(pa_oe))
+									  OR NOT (tbl_ueb_fz_join.pa_schichtgr <=> VALUES(pa_schichtgr))
+									  OR NOT (tbl_ueb_fz_join.pa_filedate <=> VALUES(pa_filedate))
+									 , VALUES(last_insert_update)
+									 , tbl_ueb_fz_join.last_insert_update
+									 )
+		    , pa_fz               = VALUES(pa_fz)
 		    , pa_taetigkeit       = VALUES(pa_taetigkeit)
 		    , pa_oe               = VALUES(pa_oe)
 		    , pa_schichtgr        = VALUES(pa_schichtgr)
 		    , pa_filedate         = VALUES(pa_filedate)
-		    , last_insert_update  = IF( pa_fz <> VALUES(pa_fz)
-	    								      , NOW()
-											   , last_insert_update
-											   )  
 		;
 		
 		-- ZAK Probezeitverlängerung
@@ -162,12 +166,13 @@ SQL SECURITY DEFINER BEGIN
 		   AND p.ende_besch > CURDATE()
 		
 		ON DUPLICATE KEY UPDATE
-		      pa_fz               = VALUES(pa_fz)
+		      last_insert_update  = IF(    NOT (tbl_ueb_fz_join.pa_fz <=> VALUES(pa_fz))
+										  OR NOT (tbl_ueb_fz_join.pa_filedate <=> VALUES(pa_filedate))
+									 , NOW()
+									 , tbl_ueb_fz_join.last_insert_update
+									 )
+		    , pa_fz               = VALUES(pa_fz)
 		    , pa_filedate         = VALUES(pa_filedate)
-		    , last_insert_update  = IF( pa_fz <> VALUES(pa_fz)
-	    								      , NOW()
-											   , tbl_ueb_fz_join.last_insert_update
-											   )  
 		;
 
 
@@ -195,7 +200,7 @@ SQL SECURITY DEFINER BEGIN
 		WHERE j.datum >= CURDATE() - INTERVAL 60 DAY
 		  AND p.persnr IS NULL
 		  AND j.pa_filedate IS NOT NULL
-		  AND j.pa_fz <> 'XXX'
+		  AND (NOT (j.pa_fz <=> 'XXX') OR j.pa_taetigkeit IS NOT NULL OR j.pa_schichtgr IS NOT NULL)
 		;
 
 
