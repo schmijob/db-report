@@ -8,8 +8,10 @@ Use db-workbench for general tool operation and delivery workflow.
 - Start with [README.md](README.md).
 - Read [database architecture](docs/architecture/architecture.md) before SQL changes.
 - Read [procedure guidance](docs/procedures.md) for procedure source and tests.
-- For worktree, test-runner, and delivery steps, follow the
-  [db-workbench agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md).
+- For shared SQL development and delivery steps, follow the
+  [db-workbench SQL-project guide](https://github.com/schmijob/db-workbench/blob/main/docs/skills/using-db-workbench.md).
+- For documentation changes, follow the
+  [db-workbench writing guide](https://github.com/schmijob/db-workbench/blob/main/docs/skills/write-docs.md).
 
 ## Always-on rules
 

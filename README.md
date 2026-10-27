@@ -20,5 +20,5 @@ database's meaning, relationships, and known limitations.
 
 For query commands and human-operated delivery steps, see the
 [db-workbench README](https://github.com/schmijob/db-workbench/blob/main/README.md)
-and its [agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md).
+and its [SQL-project agent workflow](https://github.com/schmijob/db-workbench/blob/main/docs/skills/using-db-workbench.md).
 Never commit credentials, query output, or production extracts.

@@ -46,6 +46,6 @@ important source-data assumptions explicit.
 
 Optional interactive smoke tests against configured LOCAL live in
 `procedures/tests/<procedure_name>.sql`. See the [db-workbench architecture guide](https://github.com/schmijob/db-workbench/blob/main/docs/architecture/architecture.md#procedure-fixture-suite)
-for fixture-runner behavior and the [agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md#configured-project-changes)
-for how to run tests and prepare a candidate. The agent-to-human handoff is
-defined in this repository's `AGENTS.md`.
+for fixture-runner behavior and the [SQL-project agent workflow](https://github.com/schmijob/db-workbench/blob/main/docs/skills/using-db-workbench.md)
+for shared procedure-development steps. The agent-to-human handoff is defined
+in this repository's `AGENTS.md`.
