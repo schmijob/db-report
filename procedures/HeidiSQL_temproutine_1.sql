@@ -32,7 +32,8 @@ SELECT MAX(datum) INTO @last_fanf FROM tbl_uebertrag_fanf;
 				     , WEEKDAY(a.bekannt_seit) + DATEDIFF(a.datum, a.bekannt_seit) AS wd2	
 				  FROM tbl_ueb_aend_fz_kalender a
 			LEFT JOIN tbl_datum d 					ON a.datum = d.datum
-			LEFT JOIN tbl_ueb_personalakte p 	ON a.persnr = p.persnr
+			LEFT JOIN tbl_ueb_personalakte_scd p 	ON a.persnr = p.persnr
+			                                   AND a.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 			LEFT JOIN tbl_ueb_fz_buchungen f 	ON f.PersNr = a.persnr AND f.Datum = a.datum
 			LEFT JOIN tbl_abwesenheitsgrund b 	ON a.wert = b.kuerzel
 			LEFT JOIN tbl_schichten s ON f.schicht = s.schicht AND s.index <= 3
@@ -149,7 +150,8 @@ SELECT MAX(datum) INTO @last_fanf FROM tbl_uebertrag_fanf;
          , d.wochenbeginn
       FROM tbl_ueb_fz_buchungen b
       LEFT JOIN tbl_ueb_aend_fz_kalender ak ON b.datum = ak.datum AND b.persnr = ak.persnr AND ak.feld = 'fehlzeit'
-      LEFT JOIN tbl_ueb_personalakte p ON b.PersNr = p.persnr
+      LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr
+                                         AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
       LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
      INNER JOIN tbl_datum d ON b.datum = d.datum AND d.arbeitstag = 1
       LEFT JOIN tbl_schichten s ON d.schichtindex = s.schichtindex AND b.schicht = s.schicht AND s.index <= 9

@@ -90,6 +90,7 @@ These objects occur across domains and should not automatically be classified as
 
 - `tbl_import_personalakte`
 - `tbl_uebertrag_personalakte` # depreceated
+- `tbl_ueb_personalakte_scd`
 - `tbl_ueb_personalakte`
 - `tbl_stamm_OE_translate`
 - `tbl_stamm_taetigkeit_translate`
@@ -104,17 +105,38 @@ tbl_import_personalakte
         v
 proc_uebertrag_personalakte
         |
-        v
-tbl_ueb_personalakte
+        +-> tbl_ueb_personalakte_scd_snapshot (compact snapshot fallback intervals)
+        |                |
+        |                +---- tbl_uebertrag_aenderungen_werte
+        |                                  |
+        |                                  v
+        +--------------------> proc_ueb_personalakte_scd_reconcile
+                                      |
+                                      +-> tbl_ueb_personalakte_scd
+                                              +-> date-sensitive internal consumers
         |
-        +-> vp_personal_u
-        +-> Personalplanung
-        +-> Nettoanwesenheit
-        +-> CAPS
-        +-> assorted reporting
+        +-> tbl_ueb_personalakte_current (one current row per person)
+                +-> tbl_ueb_personalakte compatibility view
+                        +-> vp_personal_u compatibility view
+                        +-> external consumers
 ```
 
-`vp_personal_u` is one of the most important shared dimensions in the schema.
+`tbl_ueb_personalakte_scd.gueltig_von` and `gueltig_bis` are inclusive validity
+dates for the complete normalized row. They are separate from employment dates
+`beginn` and `ende`. Internal joins use `persnr` plus the fact's date within the
+validity interval. The snapshot baseline retains only changed states, not one
+row per person per day. For each effective date and field, the latest
+`aenderungsdatum` in `tbl_uebertrag_aenderungen_werte` is authoritative, so
+retroactive changes can revise earlier intervals. If equally recent change
+rows disagree, a date cannot be parsed, or a change already present by the
+snapshot's `filedate` disagrees with that snapshot, the reconciler uses the
+snapshot value for that field and records the conflict in
+`tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive change
+is resolved in favor of the change log.
+
+`tbl_ueb_personalakte` and `vp_personal_u` retain their one-row-per-person
+current projection for compatibility. Internal date-sensitive queries should
+use `tbl_ueb_personalakte_scd`.
 
 ## Logging / Infrastructure
 
@@ -212,16 +234,25 @@ tbl_uebertrag_aenderungen
 tbl_uebertrag_aenderungen_beginn_ende
         |
         v
-tbl_ueb_personalakte
+proc_uebertrag_personalakte
+        |
+        +-> tbl_ueb_personalakte_scd_snapshot
+                   |
+tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
+                   |
+                   +-> tbl_ueb_personalakte_scd
+                           +-> dated Personalplanung / attendance / PEKO consumers
+
+tbl_ueb_personalakte_current
+        |
+        +-> tbl_ueb_personalakte (compatibility view)
+                +-> vp_personal_u (compatibility view)
 ```
 
 Common access view:
 
-```text
-vp_personal_u
-    |
-    +-> tbl_ueb_personalakte
-```
+`tbl_ueb_personalakte_current` remains the current-state backing table used by
+the compatibility views. Do not use it for date-sensitive analysis.
 Mapping taetigkeit to categories:
 `tbl_stamm_kategorie_abteilung`
 
@@ -521,7 +552,7 @@ tbl_stamm_kategorie_abteilung
 tbl_uebertrag_fanf
 tbl_ueb_aend_fz_kalender
 tbl_ueb_fz_buchungen
-tbl_ueb_personalakte
+tbl_ueb_personalakte_scd
 ```
 
 Intermediate tables:
@@ -550,7 +581,7 @@ Conceptually:
 tbl_uebertrag_fanf -----------+
 tbl_ueb_fz_buchungen ---------+
 tbl_ueb_fz_forecast ----------+
-tbl_ueb_personalakte ---------+--> proc_ueb_fz_personalplanung
+tbl_ueb_personalakte_scd -----+--> proc_ueb_fz_personalplanung
 tbl_ueb_fluktuation_person ---+             |
 tbl_ueb_fz_persfaktor --------+             v
                                   tbl_ueb_fz_personalplanung
@@ -842,7 +873,7 @@ view_ausgangsrechnung_ako_wochenwerte
 ```text
 tbl_import_buchungen_mitarbeiter --+
 tbl_ueb_fz_buchungen --------------+
-tbl_ueb_personalakte ---------------+--> view_nettoanwesenheit
+tbl_ueb_personalakte_scd -----------+--> view_nettoanwesenheit
 tbl_abwesenheitsgrund --------------+
 tbl_stamm_kategorie_abteilung ------+
 ```
@@ -918,7 +949,8 @@ When investigating business logic, these are useful entry points.
 
 ```text
 vp_personal_i -> import personnel
-vp_personal_u -> transformed personnel
+vp_personal_u -> current transformed personnel (compatibility)
+tbl_ueb_personalakte_scd -> date-sensitive transformed personnel
 ```
 
 ## Bookings
@@ -1022,7 +1054,7 @@ tbl_import_* source
 ```text
 PERSONALPLANUNG
 
-personalakte -----------------> tbl_ueb_personalakte -----------+
+personalakte -----------------> tbl_ueb_personalakte_scd --------+
                                                                |
 buchungen -> uebertrag -> tbl_ueb_buchungen -> fz_buchungen ---+
                                                                |

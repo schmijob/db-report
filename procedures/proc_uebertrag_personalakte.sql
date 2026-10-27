@@ -3,16 +3,24 @@
 DROP PROCEDURE IF EXISTS `proc_uebertrag_personalakte`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte`()
 SQL SECURITY DEFINER BEGIN
-    DECLARE var_liu TIMESTAMP;
+    DECLARE var_filedate DATETIME;
     DECLARE var_maxdate DATE;
     
     -- Prüfung, ob neue Änderungen vorhanden sind
-    SELECT max(lastinsertupdate) INTO var_liu FROM tbl_import_personalakte imp;
+    SELECT MAX(filedate) INTO var_filedate FROM tbl_import_personalakte imp;
     SELECT MAX(datum) INTO var_maxdate FROM tbl_datum;
     
-	 IF NOT EXISTS (SELECT 1 FROM tbl_ueb_personalakte ueb WHERE ueb.last_insert_update > var_liu) THEN
+	 IF var_filedate IS NOT NULL
+	    AND (
+	        COALESCE(@personalakte_scd_backfill, 0) = 1
+	        OR NOT EXISTS (
+	        SELECT 1
+	          FROM tbl_ueb_personalakte_current ueb
+	         WHERE ueb.filedate = var_filedate
+	        )
+	    ) THEN
 	 	-- Personalakte übertragen
-		INSERT INTO tbl_ueb_personalakte (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
+		INSERT INTO tbl_ueb_personalakte_current (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
 		
 		-- In Zeus gelöschte MA (=kein Enddatum) rausfiltern
 		WITH personalakte AS (
@@ -28,7 +36,7 @@ SQL SECURITY DEFINER BEGIN
 				 , p.betriebsrat
 				 , p.filedate 
 			    		   -- Bei ZAK verlängere 3 Monate 'Probezeit'-Befristung auf 15 Monate 
-				 , CASE WHEN p.info = 'ZAK' AND p.ende_besch > CURDATE() AND p.ende_besch BETWEEN p.beginn_besch + INTERVAL 80 DAY AND p.beginn_besch + INTERVAL 100 DAY
+				   , CASE WHEN p.info = 'ZAK' AND p.ende_besch > DATE(var_filedate) AND p.ende_besch BETWEEN p.beginn_besch + INTERVAL 80 DAY AND p.beginn_besch + INTERVAL 100 DAY
 			    		  THEN p.beginn_besch + INTERVAL 15 MONTH
 			    		  ELSE p.ende_besch -- COALESCE(b.ende, p.ende_besch) 
 					END AS ende_besch
@@ -98,11 +106,15 @@ SQL SECURITY DEFINER BEGIN
 			  , filedate = VALUES(filedate)
 
 		;
+
+		CALL proc_ueb_personalakte_scd_sync(DATE(var_filedate));
+
+		IF COALESCE(@personalakte_scd_backfill, 0) = 0 THEN
 				
 				
 				-- übernommene ZAK aus Verlängerungsliste (=tbl_stamm_persnr ersetzt Ende Beschäftigung) löschen
 		DELETE s FROM tbl_stamm_persnr s
-		LEFT JOIN tbl_ueb_personalakte p ON s.persnr = p.persnr
+		LEFT JOIN tbl_ueb_personalakte_current p ON s.persnr = p.persnr
 		WHERE p.`übernahme` = 1;
 				-- Geplante Verlängerungen aus Verlängerungsliste löschen
 		DELETE s FROM tbl_stamm_persnr s
@@ -127,9 +139,10 @@ SQL SECURITY DEFINER BEGIN
 		             , p.oe
 		             , p.schichtgruppe
 		             , p.filedate
-		          FROM tbl_ueb_personalakte p
+		          FROM tbl_ueb_personalakte_scd p
 		          JOIN tbl_datum d
 		            ON d.datum BETWEEN p.beginn AND p.ende
+		           AND d.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 		         WHERE d.datum BETWEEN CURDATE() - INTERVAL 7 DAY
 		                           AND CURDATE() + INTERVAL 90 DAY
 		       ) x
@@ -153,10 +166,11 @@ SQL SECURITY DEFINER BEGIN
 		     , d.datum
 		     , IF(d.arbeitstag = 1, '*', '')
 		     , p.filedate
-		  FROM tbl_ueb_personalakte s
+		  FROM tbl_ueb_personalakte_scd s
 		  JOIN tbl_import_personalakte p ON p.pers_nr = s.persnr
 		  JOIN tbl_datum d ON d.datum BETWEEN NULLIF(p.ende_besch, '9999-12-31') + INTERVAL 1 DAY
 		                                  AND s.ende
+		                  AND d.datum BETWEEN s.gueltig_von AND s.gueltig_bis
 		 WHERE d.datum BETWEEN CURDATE() - INTERVAL 7 DAY
 		                   AND CURDATE() + INTERVAL 90 DAY
 		   AND p.ende_besch > CURDATE()
@@ -176,9 +190,10 @@ SQL SECURITY DEFINER BEGIN
 		LEFT JOIN (
 		    SELECT p.persnr
 		         , d.datum
-		      FROM tbl_ueb_personalakte p
+		      FROM tbl_ueb_personalakte_scd p
 		      JOIN tbl_datum d
 		        ON d.datum BETWEEN p.beginn AND p.ende
+		       AND d.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 		     WHERE d.datum >= CURDATE() - INTERVAL 60 DAY
 		) p
 		       ON p.persnr = j.persnr
@@ -199,7 +214,8 @@ SQL SECURITY DEFINER BEGIN
 		;
 
 
-	CALL proc_ueb_fz_geister_loeschen();
+		CALL proc_ueb_fz_geister_loeschen();
+		END IF;
 			 	
 	END IF;
 END//

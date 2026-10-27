@@ -153,7 +153,9 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	       END AS buchung_status
 	     , b.filedate
 	  FROM vp_buchungen_u b
-	  LEFT JOIN vp_personal_u p ON b.persnr = p.persnr
+	  LEFT JOIN tbl_ueb_personalakte_scd p
+	    ON b.persnr = p.persnr
+	   AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 	  LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
 	  LEFT JOIN tbl_schichten s ON b.schicht = s.schicht
 	                           AND s.index <= 3

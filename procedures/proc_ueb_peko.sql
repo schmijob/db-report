@@ -105,79 +105,6 @@ fanf AS (
     GROUP BY f.datum
 ),
 
-aenderungen AS (
-    SELECT
-        persnr,
-        datum,
-        aenderungsdatum,
-        feld,
-        wert,
-        gueltig_von,
-        gueltig_bis
-
-    FROM tbl_uebertrag_aenderungen_werte
-    JOIN date_range d
-      ON d.datum BETWEEN gueltig_von AND gueltig_bis
-
-    WHERE beschreibung NOT LIKE '(Gelöscht)%'
-      AND feld IN (
-            'Organisationseinheit der Person',
-            'Tätigkeit'
-      )
-      AND aenderungsdatum >= CURDATE() - INTERVAL 20 DAY
-
-/*    UNION ALL
-
-    SELECT
-        persnr,
-        datum,
-        aenderungsdatum,
-        feld,
-        wert,
-        gueltig_von,
-        gueltig_bis
-
-    FROM tbl_import_aenderung_grundzustand
-    JOIN date_range d
-      ON d.datum BETWEEN gueltig_von AND gueltig_bis
-
-    WHERE wert <> 'alle ausgeschiedenen MAInnen'
-      AND feld IN (
-            'Organisationseinheit der Person',
-            'Tätigkeit'
-      ) */
-),
-
-changed_oe AS (
-    SELECT
-        b.persnr,
-        b.datum,
-        b.wert,
-
-        ROW_NUMBER() OVER (
-            PARTITION BY b.persnr, b.datum
-            ORDER BY b.aenderungsdatum DESC
-        ) AS rn
-
-    FROM aenderungen b
-    WHERE b.feld = 'Organisationseinheit der Person'
-),
-
-changed_taetigkeit AS (
-    SELECT
-        b.persnr,
-        b.datum,
-        b.wert,
-
-        ROW_NUMBER() OVER (
-            PARTITION BY b.persnr, b.datum
-            ORDER BY b.aenderungsdatum DESC
-        ) AS rn
-
-    FROM aenderungen b
-    WHERE b.feld = 'Tätigkeit'
-),
-
 base AS (
     SELECT
         b.datum,
@@ -191,12 +118,12 @@ base AS (
         p.oe,
         k.kategorie,
 
-        IFNULL(co.wert, p.oe) AS effective_oe,
-        IFNULL(ct.wert, p.taetigkeit) AS effective_taetigkeit,
+        p.oe AS effective_oe,
+        p.taetigkeit AS effective_taetigkeit,
 
         CASE
             WHEN k.kategorie = 'Operativ'
-              OR IFNULL(ct.wert, p.taetigkeit) IN (
+              OR p.taetigkeit IN (
                     'Teamleiter',
                     'Trainer',
                     'Leitstand'
@@ -210,21 +137,12 @@ base AS (
     JOIN date_range d
       ON d.datum = b.datum
 
-    LEFT JOIN tbl_ueb_personalakte p
+    LEFT JOIN tbl_ueb_personalakte_scd p
            ON p.persnr = b.persnr
-
-    LEFT JOIN changed_oe co
-           ON co.persnr = b.persnr
-          AND co.datum = b.datum
-          AND co.rn = 1
-
-    LEFT JOIN changed_taetigkeit ct
-           ON ct.persnr = b.persnr
-          AND ct.datum = b.datum
-          AND ct.rn = 1
+          AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 
     LEFT JOIN tbl_stamm_kategorie_abteilung k
-           ON k.tätigkeit = IFNULL(ct.wert, p.taetigkeit)
+           ON k.tätigkeit = p.taetigkeit
 
     WHERE p.oe <> 'Extern' AND k.kategorie <> 'Overhead (AT)'
 ),
@@ -367,11 +285,12 @@ temp_onboarding_actual AS (
         YEARWEEK(p.beginn, 3) AS iso_week,
         COUNT(DISTINCT p.persnr) AS temp_onboarding_actual
 
-    FROM tbl_ueb_personalakte p
+    FROM tbl_ueb_personalakte_scd p
     CROSS JOIN params x
 
     WHERE p.eg = 'ZAK'
       AND p.beginn >= x.prev_monday
+      AND p.beginn BETWEEN p.gueltig_von AND p.gueltig_bis
  --     AND p.beginn < x.curr_monday
 
     GROUP BY YEARWEEK(p.beginn, 3)
@@ -400,12 +319,13 @@ temp_offboarding AS (
         YEARWEEK(p.ende, 3) AS iso_week,
         COUNT(DISTINCT p.persnr) AS temp_offboarding
 
-    FROM tbl_ueb_personalakte p
+    FROM tbl_ueb_personalakte_scd p
     CROSS JOIN params x
 
     WHERE p.eg = 'ZAK'
       AND p.ende BETWEEN x.prev_monday
                      AND x.next_monday + INTERVAL 6 DAY
+      AND p.ende BETWEEN p.gueltig_von AND p.gueltig_bis
 
     GROUP BY YEARWEEK(p.ende, 3)
 ),
@@ -427,8 +347,9 @@ temp_double_shift AS (
         JOIN date_range d
           ON d.datum = b.datum
 
-        JOIN tbl_ueb_personalakte p
+        JOIN tbl_ueb_personalakte_scd p
           ON p.persnr = b.persnr
+         AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 
         WHERE p.eg = 'ZAK'
           AND p.oe <> 'Extern'

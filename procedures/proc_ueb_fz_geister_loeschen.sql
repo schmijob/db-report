@@ -9,7 +9,7 @@ SQL SECURITY DEFINER BEGIN
 -- SELECT * FROM tbl_uebertrag_aenderungen_werte a WHERE a.feld = 'personalnummer'
 -- SELECT p.persnr, p.last_insert_update, p.filedate, b.* 
 DELETE p, b
-FROM tbl_ueb_personalakte p
+FROM tbl_ueb_personalakte_current p
 LEFT JOIN tbl_import_personalakte p2 ON p.persnr = p2.pers_nr
 LEFT JOIN tbl_ueb_fz_buchungen b ON p.persnr = b.PersNr
 WHERE p2.pers_nr IS NULL

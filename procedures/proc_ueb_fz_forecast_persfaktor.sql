@@ -15,7 +15,8 @@ WITH raw_absence AS (
           , COUNT(*) AS total_days
           , cast(SUM(b.anwesenheit IN ('Lfz', 'Sonst.', 'KE')) / COUNT(*) AS DECIMAL(5,4)) AS actuals
        FROM tbl_ueb_fz_buchungen b
-       LEFT JOIN tbl_ueb_personalakte p ON b.PersNr = p.persnr
+       LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr
+                                          AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
        LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
       INNER JOIN tbl_datum d ON b.datum = d.datum AND d.arbeitstag = 1
        LEFT JOIN tbl_schichten s ON d.schichtindex = s.schichtindex AND b.Schicht = s.Schicht AND s.index <= 9

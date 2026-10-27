@@ -34,9 +34,10 @@ emp_raw AS (
         CASE WHEN p.eg = 'ZAK' THEN 'ZAK' ELSE 'DPW' END AS employee_type,
         p.beginn AS start_date,
         NULLIF(p.ende, DATE('9999-12-31')) AS end_final
-    FROM vp_personal_u p
+    FROM tbl_ueb_personalakte_scd p
     WHERE p.beginn IS NOT NULL
       AND p.beginn <= @asof_date
+      AND @asof_date BETWEEN p.gueltig_von AND p.gueltig_bis
       AND EXISTS (
             SELECT 1
             FROM tbl_stamm_kategorie_abteilung k

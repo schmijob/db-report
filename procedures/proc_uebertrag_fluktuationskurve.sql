@@ -38,12 +38,13 @@ personal AS (
       , CASE WHEN p.eg = 'ZAK' THEN 'ZAK' ELSE 'DPW' END AS employee_type
       , p.beginn AS start_date
       , NULLIF(p.ende, DATE('9999-12-31')) AS end_date
-    FROM vp_personal_u p
+    FROM tbl_ueb_personalakte_scd p
     LEFT JOIN tbl_stamm_kategorie_abteilung k
       ON p.taetigkeit = k.`tätigkeit`
     WHERE k.kategorie = 'Operativ'
       AND p.beginn IS NOT NULL
       AND p.beginn <= @asof_date
+      AND @asof_date BETWEEN p.gueltig_von AND p.gueltig_bis
 )
 , anw_by_day AS (
     SELECT
@@ -52,8 +53,9 @@ personal AS (
       , SUM(b.anwesenheit = 'anw') 
         / NULLIF(SUM(b.anwesenheit <> 'frei'), 0) AS anw
     FROM vp_buchungen b
-    JOIN vp_personal_u p 
+    JOIN tbl_ueb_personalakte_scd p
       ON b.persnr = p.persnr
+     AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
     JOIN tbl_stamm_kategorie_abteilung k 
       ON p.taetigkeit = k.`tätigkeit`
      AND k.kategorie = 'Operativ'
