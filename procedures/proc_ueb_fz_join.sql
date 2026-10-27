@@ -6,20 +6,14 @@ DROP PROCEDURE IF EXISTS `proc_ueb_fz_join`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_ueb_fz_join`()
 SQL SECURITY DEFINER BEGIN
 
+    -- Materialize keyed sets that later phases reuse; keep one-use transformations as CTEs.
     DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_affected;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_virtual;
     DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_resolved_day;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_tp_shift;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_expected_slots;
     DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_bookings;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_actual_slots;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_day_slots;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_exact_matches;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_remaining_expected;
     DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_assignments;
-    DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_shift_rows;
     DROP TEMPORARY TABLE IF EXISTS tmp_fz_join_output;
 
+    -- Materialize the affected keys once; source resolution, bookings, and cleanup all reuse them.
     CREATE TEMPORARY TABLE tmp_fz_join_affected AS
     SELECT candidates.persnr
          , candidates.datum
@@ -77,7 +71,10 @@ SQL SECURITY DEFINER BEGIN
 
     ALTER TABLE tmp_fz_join_affected ADD PRIMARY KEY (persnr, datum);
 
-    CREATE TEMPORARY TABLE tmp_fz_join_virtual AS
+    -- Resolve source precedence once per day; virtual takeover days are only needed in this statement.
+    CREATE TEMPORARY TABLE tmp_fz_join_resolved_day AS
+    WITH virtual_days AS (
+    -- Future takeover dates can synthesize workdays before stored source rows arrive.
     SELECT sp.persnr
          , d.datum
          , MAX(IF(d.arbeitstag = 1, '*', '')) COLLATE utf8mb4_unicode_ci AS virtual_fz
@@ -89,12 +86,8 @@ SQL SECURITY DEFINER BEGIN
                                   AND a.datum = d.datum
      WHERE sp.uebernahme_am >= CURDATE()
      GROUP BY sp.persnr
-            , d.datum;
-
-    ALTER TABLE tmp_fz_join_virtual ADD PRIMARY KEY (persnr, datum);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_resolved_day AS
-    WITH source_resolution AS (
+            , d.datum
+    ), source_resolution AS (
     SELECT a.persnr
          , a.datum
          , j.pk_fz
@@ -148,8 +141,8 @@ SQL SECURITY DEFINER BEGIN
       JOIN tbl_datum d ON d.datum = a.datum
       LEFT JOIN tbl_ueb_fz_join j ON j.persnr = a.persnr
                                  AND j.datum = a.datum
-      LEFT JOIN tmp_fz_join_virtual v ON v.persnr = a.persnr
-                                     AND v.datum = a.datum
+      LEFT JOIN virtual_days v ON v.persnr = a.persnr
+                              AND v.datum = a.datum
       LEFT JOIN tbl_ueb_personalakte p ON p.persnr = a.persnr
       LEFT JOIN tbl_stamm_persnr sp ON sp.persnr = a.persnr
      WHERE d.datum BETWEEN COALESCE(p.beginn, '0000-01-01') AND COALESCE(p.ende, '9999-12-31')
@@ -219,68 +212,7 @@ SQL SECURITY DEFINER BEGIN
 
     ALTER TABLE tmp_fz_join_resolved_day ADD PRIMARY KEY (persnr, datum);
 
-    CREATE TEMPORARY TABLE tmp_fz_join_tp_shift AS
-    SELECT tp.tp COLLATE utf8mb4_unicode_ci AS tp
-         , tp.tp_anwesenheit
-         , COALESCE(tp.shift_int, IF(tp.schicht = 'Tag' AND tp.tp_anwesenheit = 'anw', 2, NULL)) AS schicht
-         , MAX(tp.sollzeit) AS sollzeit
-      FROM (
-            SELECT a.kuerzel AS tp
-                 , a.anwesenheit AS tp_anwesenheit
-                 , shifts.schicht_int AS shift_int
-                 , a.schicht
-                 , a.sollzeit
-              FROM tbl_abwesenheitsgrund a
-              LEFT JOIN (
-                        SELECT schicht
-                             , MIN(schicht_int) AS schicht_int
-                          FROM tbl_schichten
-                         WHERE `Index` <= 3
-                         GROUP BY schicht
-                        ) shifts ON shifts.schicht = a.schicht
-             WHERE a.feld = 'tagesplan'
-
-            UNION ALL
-
-            SELECT 'PV', 'anw', 3, 'Spät', CAST('16:30:00' AS TIME)
-
-            UNION ALL
-
-            SELECT 'S+N', 'anw', 3, 'Spät', CAST('16:30:00' AS TIME)
-           ) tp
-     GROUP BY tp.tp
-            , tp.tp_anwesenheit
-            , COALESCE(tp.shift_int, IF(tp.schicht = 'Tag' AND tp.tp_anwesenheit = 'anw', 2, NULL));
-
-    ALTER TABLE tmp_fz_join_tp_shift ADD KEY ix_tmp_fz_join_tp_shift_tp (tp, schicht);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_expected_slots AS
-    WITH expected_ranked AS (
-    SELECT r.persnr
-         , r.datum
-         , tp.schicht
-         , tp.sollzeit
-         , ROW_NUMBER() OVER (PARTITION BY r.persnr, r.datum ORDER BY tp.schicht) AS slot
-      FROM tmp_fz_join_resolved_day r
-      JOIN tmp_fz_join_tp_shift tp ON tp.tp = r.tp_raw
-                                  AND tp.tp_anwesenheit = 'anw'
-                                  AND tp.schicht IS NOT NULL
-    )
-
-    SELECT r.persnr
-         , r.datum
-         , MAX(CASE WHEN e.slot = 1 THEN e.schicht END) AS expected_shift_1
-         , MAX(CASE WHEN e.slot = 2 THEN e.schicht END) AS expected_shift_2
-         , MAX(CASE WHEN e.slot = 1 THEN e.sollzeit END) AS expected_sollzeit_1
-         , MAX(CASE WHEN e.slot = 2 THEN e.sollzeit END) AS expected_sollzeit_2
-      FROM tmp_fz_join_resolved_day r
-      LEFT JOIN expected_ranked e ON e.persnr = r.persnr
-                                 AND e.datum = r.datum
-     GROUP BY r.persnr
-            , r.datum;
-
-    ALTER TABLE tmp_fz_join_expected_slots ADD PRIMARY KEY (persnr, datum);
-
+    -- Materialize bookings because matching and output both reuse the indexed day/shift rows.
     CREATE TEMPORARY TABLE tmp_fz_join_bookings AS
     SELECT b.persnr
          , b.datum
@@ -349,16 +281,74 @@ SQL SECURITY DEFINER BEGIN
        AND recent.persnr IS NULL;
 
     ALTER TABLE tmp_fz_join_bookings ADD PRIMARY KEY (persnr, datum, schicht);
+    -- Build planned shifts from the dictionary, then rank planned and actual shifts at day grain.
+    -- Reserve exact matches first, then pair remaining slots deterministically.
+    -- Materialize one assignment row per day for output expansion and status calculation.
+    CREATE TEMPORARY TABLE tmp_fz_join_assignments AS
+    WITH tp_shift AS (
+    -- Start with dictionary shifts; PV and S+N add their explicit late-shift slot below.
+    SELECT tp.tp COLLATE utf8mb4_unicode_ci AS tp
+         , tp.tp_anwesenheit
+         , COALESCE(tp.shift_int, IF(tp.schicht = 'Tag' AND tp.tp_anwesenheit = 'anw', 2, NULL)) AS schicht
+         , MAX(tp.sollzeit) AS sollzeit
+      FROM (
+            SELECT a.kuerzel AS tp
+                 , a.anwesenheit AS tp_anwesenheit
+                 , shifts.schicht_int AS shift_int
+                 , a.schicht
+                 , a.sollzeit
+              FROM tbl_abwesenheitsgrund a
+              LEFT JOIN (
+                        SELECT schicht
+                             , MIN(schicht_int) AS schicht_int
+                          FROM tbl_schichten
+                         WHERE `Index` <= 3
+                         GROUP BY schicht
+                        ) shifts ON shifts.schicht = a.schicht
+             WHERE a.feld = 'tagesplan'
 
-    CREATE TEMPORARY TABLE tmp_fz_join_actual_slots AS
-    WITH actual_ranked AS (
+            UNION ALL
+
+            SELECT 'PV', 'anw', 3, 'Spät', CAST('16:30:00' AS TIME)
+
+            UNION ALL
+
+            SELECT 'S+N', 'anw', 3, 'Spät', CAST('16:30:00' AS TIME)
+           ) tp
+     GROUP BY tp.tp
+            , tp.tp_anwesenheit
+            , COALESCE(tp.shift_int, IF(tp.schicht = 'Tag' AND tp.tp_anwesenheit = 'anw', 2, NULL))
+    ), expected_ranked AS (
+    -- Keep the plan's work time with each expected shift while ordering by shift ID.
+    SELECT r.persnr
+         , r.datum
+         , tp.schicht
+         , tp.sollzeit
+         , ROW_NUMBER() OVER (PARTITION BY r.persnr, r.datum ORDER BY tp.schicht) AS slot
+      FROM tmp_fz_join_resolved_day r
+      JOIN tp_shift tp ON tp.tp = r.tp_raw
+                      AND tp.tp_anwesenheit = 'anw'
+                      AND tp.schicht IS NOT NULL
+    ), expected_slots AS (
+    SELECT r.persnr
+         , r.datum
+         , MAX(CASE WHEN e.slot = 1 THEN e.schicht END) AS expected_shift_1
+         , MAX(CASE WHEN e.slot = 2 THEN e.schicht END) AS expected_shift_2
+         , MAX(CASE WHEN e.slot = 1 THEN e.sollzeit END) AS expected_sollzeit_1
+         , MAX(CASE WHEN e.slot = 2 THEN e.sollzeit END) AS expected_sollzeit_2
+      FROM tmp_fz_join_resolved_day r
+      LEFT JOIN expected_ranked e ON e.persnr = r.persnr
+                                 AND e.datum = r.datum
+     GROUP BY r.persnr
+            , r.datum
+    ), actual_ranked AS (
+    -- Stable actual-slot order: arrival time, shift ID, then source filedate.
     SELECT b.persnr
          , b.datum
          , b.schicht
          , ROW_NUMBER() OVER (PARTITION BY b.persnr, b.datum ORDER BY b.kommen, b.schicht, b.filedate) AS slot
       FROM tmp_fz_join_bookings b
-    )
-
+    ), actual_slots AS (
     SELECT r.persnr
          , r.datum
          , MAX(CASE WHEN b.slot = 1 THEN b.schicht END) AS actual_shift_1
@@ -367,11 +357,8 @@ SQL SECURITY DEFINER BEGIN
       LEFT JOIN actual_ranked b ON b.persnr = r.persnr
                                AND b.datum = r.datum
      GROUP BY r.persnr
-            , r.datum;
-
-    ALTER TABLE tmp_fz_join_actual_slots ADD PRIMARY KEY (persnr, datum);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_day_slots AS
+            , r.datum
+    ), day_slots AS (
     SELECT r.*
          , e.expected_shift_1
          , e.expected_shift_2
@@ -380,14 +367,12 @@ SQL SECURITY DEFINER BEGIN
          , a.actual_shift_1
          , a.actual_shift_2
       FROM tmp_fz_join_resolved_day r
-      LEFT JOIN tmp_fz_join_expected_slots e ON e.persnr = r.persnr
-                                            AND e.datum = r.datum
-      LEFT JOIN tmp_fz_join_actual_slots a ON a.persnr = r.persnr
-                                          AND a.datum = r.datum;
-
-    ALTER TABLE tmp_fz_join_day_slots ADD PRIMARY KEY (persnr, datum);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_exact_matches AS
+      LEFT JOIN expected_slots e ON e.persnr = r.persnr
+                                AND e.datum = r.datum
+      LEFT JOIN actual_slots a ON a.persnr = r.persnr
+                              AND a.datum = r.datum
+    ), exact_matches AS (
+    -- Exact integer matches claim their expected slot before any mismatch pairing.
     SELECT d.*
          , CASE WHEN d.actual_shift_1 = d.expected_shift_1 THEN d.expected_shift_1
                 WHEN d.actual_shift_1 = d.expected_shift_2 THEN d.expected_shift_2
@@ -399,11 +384,9 @@ SQL SECURITY DEFINER BEGIN
                      AND NOT (d.actual_shift_1 <=> d.expected_shift_2)
                 THEN d.expected_shift_2
            END AS exact_expected_2
-      FROM tmp_fz_join_day_slots d;
-
-    ALTER TABLE tmp_fz_join_exact_matches ADD PRIMARY KEY (persnr, datum);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_remaining_expected AS
+      FROM day_slots d
+    ), remaining_expected AS (
+    -- Identify the expected slots left after exact matches have been reserved.
     SELECT e.*
          , CASE WHEN e.expected_shift_1 IS NOT NULL
                      AND NOT (e.expected_shift_1 <=> e.exact_expected_1)
@@ -422,11 +405,8 @@ SQL SECURITY DEFINER BEGIN
                      AND NOT (e.expected_shift_2 <=> e.exact_expected_2)
                 THEN e.expected_shift_2
            END AS remaining_expected_2
-      FROM tmp_fz_join_exact_matches e;
-
-    ALTER TABLE tmp_fz_join_remaining_expected ADD PRIMARY KEY (persnr, datum);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_assignments AS
+      FROM exact_matches e
+    )
     SELECT e.*
          , CASE WHEN e.actual_shift_1 IS NULL THEN NULL
                 ELSE COALESCE(e.exact_expected_1, e.remaining_expected_1)
@@ -439,11 +419,14 @@ SQL SECURITY DEFINER BEGIN
                                    ELSE e.remaining_expected_1
                                END)
            END AS matched_expected_2
-      FROM tmp_fz_join_remaining_expected e;
+      FROM remaining_expected e;
 
     ALTER TABLE tmp_fz_join_assignments ADD PRIMARY KEY (persnr, datum);
 
-    CREATE TEMPORARY TABLE tmp_fz_join_shift_rows AS
+    -- Expand actual bookings and any unmatched expected shifts at this final grain.
+    -- Keep this final set materialized because both the upsert and stale-row cleanup consume it.
+    CREATE TEMPORARY TABLE tmp_fz_join_output AS
+    WITH shift_rows AS (
     SELECT a.persnr
          , a.datum
          , a.fz_raw
@@ -567,10 +550,9 @@ SQL SECURITY DEFINER BEGIN
        AND a.actual_shift_2 IS NULL
        AND a.expected_shift_1 IS NULL
        AND a.expected_shift_2 IS NULL
-       AND NOT (a.fz_raw <=> 'XXX' AND a.tp_raw IS NULL);
-
-    CREATE TEMPORARY TABLE tmp_fz_join_output AS
-    WITH output_base AS (
+       AND NOT (a.fz_raw <=> 'XXX' AND a.tp_raw IS NULL)
+    ), output_base AS (
+    -- Apply status precedence after actual bookings and unmatched expected shifts are expanded.
     SELECT r.persnr
          , r.datum
          , CASE WHEN r.actual_shift IS NOT NULL
@@ -619,7 +601,7 @@ SQL SECURITY DEFINER BEGIN
                 THEN NULL
                 ELSE GREATEST(COALESCE(r.source_filedate, '1000-01-01 00:00:00'), COALESCE(b.filedate, '1000-01-01 00:00:00'))
            END AS filedate
-      FROM tmp_fz_join_shift_rows r
+      FROM shift_rows r
       LEFT JOIN tmp_fz_join_bookings b ON b.persnr = r.persnr
                                       AND b.datum = r.datum
                                       AND b.schicht = r.actual_shift
@@ -698,16 +680,8 @@ SQL SECURITY DEFINER BEGIN
     CALL schreibe_log('proc_ueb_fz_join', 'ende', ROW_COUNT());
 
     DROP TEMPORARY TABLE tmp_fz_join_output;
-    DROP TEMPORARY TABLE tmp_fz_join_shift_rows;
     DROP TEMPORARY TABLE tmp_fz_join_assignments;
-    DROP TEMPORARY TABLE tmp_fz_join_remaining_expected;
-    DROP TEMPORARY TABLE tmp_fz_join_exact_matches;
-    DROP TEMPORARY TABLE tmp_fz_join_day_slots;
-    DROP TEMPORARY TABLE tmp_fz_join_actual_slots;
     DROP TEMPORARY TABLE tmp_fz_join_bookings;
-    DROP TEMPORARY TABLE tmp_fz_join_expected_slots;
-    DROP TEMPORARY TABLE tmp_fz_join_tp_shift;
     DROP TEMPORARY TABLE tmp_fz_join_resolved_day;
-    DROP TEMPORARY TABLE tmp_fz_join_virtual;
     DROP TEMPORARY TABLE tmp_fz_join_affected;
 END//
