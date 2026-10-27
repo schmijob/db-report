@@ -18,7 +18,8 @@ database's meaning, relationships, and known limitations.
 - [Triggers](triggers/triggers.md)
 - [Views](views/views.md)
 
-For query commands and human-operated delivery steps, see the
-[db-workbench README](https://github.com/schmijob/db-workbench/blob/main/README.md)
-and its [SQL-project agent workflow](https://github.com/schmijob/db-workbench/blob/main/docs/skills/using-db-workbench.md).
+For query commands and human-operated delivery steps, see
+`../db-workbench/README.md` and
+`../db-workbench/docs/skills/using-db-workbench.md` from the db-report checkout
+root.
 Never commit credentials, query output, or production extracts.

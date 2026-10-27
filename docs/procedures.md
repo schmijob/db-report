@@ -45,7 +45,9 @@ read-only checks that each return a single true/false value; use these to make
 important source-data assumptions explicit.
 
 Optional interactive smoke tests against configured LOCAL live in
-`procedures/tests/<procedure_name>.sql`. See the [db-workbench architecture guide](https://github.com/schmijob/db-workbench/blob/main/docs/architecture/architecture.md#procedure-fixture-suite)
-for fixture-runner behavior and the [SQL-project agent workflow](https://github.com/schmijob/db-workbench/blob/main/docs/skills/using-db-workbench.md)
-for shared procedure-development steps. The agent-to-human handoff is defined
-in this repository's `AGENTS.md`.
+`procedures/tests/<procedure_name>.sql`. From the db-report checkout root, see
+`../db-workbench/docs/architecture/architecture.md#procedure-fixture-suite`
+for fixture-runner behavior and
+`../db-workbench/docs/skills/using-db-workbench.md` for shared
+procedure-development steps. The agent-to-human handoff is defined in this
+repository's `AGENTS.md`.
