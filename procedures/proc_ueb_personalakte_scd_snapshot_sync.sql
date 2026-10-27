@@ -19,7 +19,7 @@ SQL SECURITY DEFINER BEGIN
     END IF;
 
     UPDATE tbl_ueb_personalakte_scd_snapshot s
-    JOIN tbl_ueb_personalakte_current c
+    JOIN tbl_ueb_personalakte c
       ON c.persnr = s.persnr
      AND DATE(c.filedate) <= p_gueltig_von
        SET s.gueltig_bis = DATE_SUB(p_gueltig_von, INTERVAL 1 DAY)
@@ -42,7 +42,7 @@ SQL SECURITY DEFINER BEGIN
        );
 
     UPDATE tbl_ueb_personalakte_scd_snapshot s
-    JOIN tbl_ueb_personalakte_current c
+    JOIN tbl_ueb_personalakte c
       ON c.persnr = s.persnr
      AND DATE(c.filedate) <= p_gueltig_von
      AND s.gueltig_von = p_gueltig_von
@@ -71,7 +71,7 @@ SQL SECURITY DEFINER BEGIN
     SELECT c.persnr, c.`name`, c.pdl, c.oe, c.schichtgruppe, c.eg, c.beginn, c.ende
          , c.taetigkeit, c.team, c.br, c.übernahme, c.taetigkeit2, c.funktion
          , c.last_insert_update, c.filedate, p_gueltig_von, '9999-12-31'
-      FROM tbl_ueb_personalakte_current c
+      FROM tbl_ueb_personalakte c
      WHERE DATE(c.filedate) <= p_gueltig_von
        AND NOT EXISTS (
             SELECT 1
@@ -81,7 +81,7 @@ SQL SECURITY DEFINER BEGIN
        );
 
     UPDATE tbl_ueb_personalakte_scd_snapshot s
-    JOIN tbl_ueb_personalakte_current c
+    JOIN tbl_ueb_personalakte c
       ON c.persnr = s.persnr
      AND DATE(c.filedate) <= p_gueltig_von
        SET s.last_insert_update = c.last_insert_update

@@ -1,10 +1,8 @@
--- Keep the materialized current-state table for existing consumers and writers.
+-- Keep the materialized current-state table at its existing name.
 -- Date-sensitive consumers use the separate SCD table.
-RENAME TABLE `tbl_ueb_personalakte` TO `tbl_ueb_personalakte_current`;
+CREATE TABLE `tbl_ueb_personalakte_scd` LIKE `tbl_ueb_personalakte`;
 
-CREATE TABLE `tbl_ueb_personalakte_scd` LIKE `tbl_ueb_personalakte_current`;
-
-CREATE TABLE `tbl_ueb_personalakte_scd_snapshot` LIKE `tbl_ueb_personalakte_current`;
+CREATE TABLE `tbl_ueb_personalakte_scd_snapshot` LIKE `tbl_ueb_personalakte`;
 
 -- Historical CSVs are loaded here so the live latest-snapshot import is not
 -- overwritten during backfill.
@@ -50,15 +48,9 @@ INSERT INTO `tbl_ueb_personalakte_scd_snapshot` (
 SELECT `persnr`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
      , `taetigkeit`, `team`, `br`, `übernahme`, `taetigkeit2`, `funktion`
      , `last_insert_update`, `filedate`, COALESCE(DATE(`filedate`), CURDATE()), '9999-12-31'
-  FROM `tbl_ueb_personalakte_current`;
+  FROM `tbl_ueb_personalakte`;
 
 INSERT INTO tbl_ueb_personalakte_scd SELECT * FROM tbl_ueb_personalakte_scd_snapshot;
-
-CREATE OR REPLACE VIEW `tbl_ueb_personalakte` AS
-SELECT `persnr`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
-     , `taetigkeit`, `team`, `br`, `übernahme`, `taetigkeit2`, `funktion`
-     , `last_insert_update`, `filedate`
-  FROM `tbl_ueb_personalakte_current`;
 
 CREATE OR REPLACE VIEW `vp_personal_u` AS
 SELECT p.`persnr` AS `persnr`

@@ -56,12 +56,12 @@ SQL SECURITY DEFINER BEGIN
 	        COALESCE(@personalakte_scd_backfill, 0) = 1
 	        OR NOT EXISTS (
 	        SELECT 1
-	          FROM tbl_ueb_personalakte_current ueb
+	          FROM tbl_ueb_personalakte ueb
 	         WHERE ueb.filedate = var_filedate
 	        )
 	    ) THEN
 	 	-- Personalakte übertragen
-		INSERT INTO tbl_ueb_personalakte_current (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
+		INSERT INTO tbl_ueb_personalakte (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
 		
 		-- In Zeus gelöschte MA (=kein Enddatum) rausfiltern
 		WITH personalakte AS (
@@ -156,7 +156,7 @@ SQL SECURITY DEFINER BEGIN
 				
 				-- übernommene ZAK aus Verlängerungsliste (=tbl_stamm_persnr ersetzt Ende Beschäftigung) löschen
 		DELETE s FROM tbl_stamm_persnr s
-		LEFT JOIN tbl_ueb_personalakte_current p ON s.persnr = p.persnr
+		LEFT JOIN tbl_ueb_personalakte p ON s.persnr = p.persnr
 		WHERE p.`übernahme` = 1;
 				-- Geplante Verlängerungen aus Verlängerungsliste löschen
 		DELETE s FROM tbl_stamm_persnr s

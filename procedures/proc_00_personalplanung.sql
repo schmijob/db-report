@@ -8,7 +8,7 @@ DECLARE var_datum2 DATETIME;
 
 -- Personalakte
 SELECT filedate INTO var_datum1 FROM tbl_import_personalakte LIMIT 1;
-IF NOT EXISTS (SELECT 1 FROM tbl_ueb_personalakte_current WHERE filedate = var_datum1) THEN
+IF NOT EXISTS (SELECT 1 FROM tbl_ueb_personalakte WHERE filedate = var_datum1) THEN
 	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_personalakte start", 0);
 	CALL proc_uebertrag_personalakte();
 	CALL schreibe_log("proc_00_personalplanung", "proc_uebertrag_personalakte ende", ROW_COUNT());

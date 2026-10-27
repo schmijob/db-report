@@ -5,13 +5,13 @@ upgrade or rollback step. Keep deployment tooling in `db-workbench`.
 
 ## `20261026_personalakte_scd.sql`
 
-Keeps the existing materialized one-row-per-person table, creates the compact
-snapshot baseline, the reconciled `tbl_ueb_personalakte_scd`, the reconciliation
-inspection table, and a separate import-schema staging table for historical
-CSVs. It seeds both interval tables from the current snapshot and recreates the
-legacy `tbl_ueb_personalakte` and `vp_personal_u` views over the materialized
-current table. This is a one-time migration and must run before deploying
-procedures that reference the SCD table.
+Keeps the existing materialized one-row-per-person table at
+`tbl_ueb_personalakte`, creates the compact snapshot baseline, the reconciled
+`tbl_ueb_personalakte_scd`, the reconciliation inspection table, and a separate
+import-schema staging table for historical CSVs. It seeds both interval tables
+from the current snapshot and recreates `vp_personal_u` over the current table.
+This is a one-time migration and must run before deploying procedures that
+reference the SCD table.
 
 Apply the view definitions under `views/` after the migration. In particular,
 the cluster and attendance views no longer reconstruct OE/activity from the

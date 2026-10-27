@@ -56,7 +56,7 @@ IF NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen_werte ueb WHERE ueb.last_
 	CALL schreibe_log("proc_uebertrag_aenderungen", "personalakte start", 0);
 	SELECT filedate INTO @filedate FROM tbl_import_personalakte LIMIT 1;
 	
-	INSERT INTO tbl_ueb_personalakte_current(persnr, name, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, filedate)
+	INSERT INTO tbl_ueb_personalakte(persnr, name, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, filedate)
 	WITH aenderungen AS (
 		SELECT ua.*
 		     , ROW_NUMBER() OVER (PARTITION BY persnr, feld ORDER BY aenderungsdatum DESC) AS rn 
@@ -117,16 +117,16 @@ IF NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen_werte ueb WHERE ueb.last_
 		  LEFT JOIN dates2 s ON a.persnr = s.persnr
 		  LEFT JOIN tbl_import_personalakte p ON a.persnr = p.pers_nr AND p.oe_der_person <> 'alle ausgeschiedenen MAInnen'
         ON DUPLICATE KEY UPDATE
-            tbl_ueb_personalakte_current.`name`        = COALESCE(VALUES(`name`), tbl_ueb_personalakte_current.`name`)
-            , tbl_ueb_personalakte_current.oe            = COALESCE(VALUES(oe), tbl_ueb_personalakte_current.oe)
-            , tbl_ueb_personalakte_current.schichtgruppe = COALESCE(VALUES(schichtgruppe), tbl_ueb_personalakte_current.schichtgruppe)
-            , tbl_ueb_personalakte_current.eg            = COALESCE(VALUES(eg), tbl_ueb_personalakte_current.eg)
-            , tbl_ueb_personalakte_current.beginn        = COALESCE(s.beginn, tbl_ueb_personalakte_current.beginn)
-            , tbl_ueb_personalakte_current.ende          = COALESCE(s.ende, tbl_ueb_personalakte_current.ende)
-            , tbl_ueb_personalakte_current.taetigkeit    = COALESCE(VALUES(taetigkeit), tbl_ueb_personalakte_current.taetigkeit)
-            , tbl_ueb_personalakte_current.team          = COALESCE(VALUES(team), tbl_ueb_personalakte_current.team)
-            , tbl_ueb_personalakte_current.br            = COALESCE(VALUES(br), tbl_ueb_personalakte_current.br)
-            , tbl_ueb_personalakte_current.filedate      = COALESCE(VALUES(filedate), tbl_ueb_personalakte_current.filedate)
+            tbl_ueb_personalakte.`name`        = COALESCE(VALUES(`name`), tbl_ueb_personalakte.`name`)
+            , tbl_ueb_personalakte.oe            = COALESCE(VALUES(oe), tbl_ueb_personalakte.oe)
+            , tbl_ueb_personalakte.schichtgruppe = COALESCE(VALUES(schichtgruppe), tbl_ueb_personalakte.schichtgruppe)
+            , tbl_ueb_personalakte.eg            = COALESCE(VALUES(eg), tbl_ueb_personalakte.eg)
+            , tbl_ueb_personalakte.beginn        = COALESCE(s.beginn, tbl_ueb_personalakte.beginn)
+            , tbl_ueb_personalakte.ende          = COALESCE(s.ende, tbl_ueb_personalakte.ende)
+            , tbl_ueb_personalakte.taetigkeit    = COALESCE(VALUES(taetigkeit), tbl_ueb_personalakte.taetigkeit)
+            , tbl_ueb_personalakte.team          = COALESCE(VALUES(team), tbl_ueb_personalakte.team)
+            , tbl_ueb_personalakte.br            = COALESCE(VALUES(br), tbl_ueb_personalakte.br)
+            , tbl_ueb_personalakte.filedate      = COALESCE(VALUES(filedate), tbl_ueb_personalakte.filedate)
 		  
         ;
 END IF;
