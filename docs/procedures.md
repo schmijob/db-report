@@ -63,10 +63,36 @@ snapshot, it uses the snapshot value for that field and records the conflict
 in `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive
 change remains authoritative over an older snapshot.
 
-For historical CSV replay, load all files into
-`tbl_import_personalakte_scd_backfill`, which has the import schema. Do not
-replace the live `tbl_import_personalakte`: other procedures read it as the
-latest import. Clear `tbl_ueb_personalakte_scd_snapshot` and
+For historical CSV replay, first export the `Personalliste ALL.csv`
+attachments into a folder outside the repository. Run
+`python scripts/prepare_personalliste_backfill.py <raw-folder> --validate-only`
+to validate the complete files. The script locates the report header by its
+labels while retaining empty separator columns, reads the `Druckdatum` value
+for `filedate`, and checks the footer count, dates, and duplicate personnel
+numbers. `--structure-only --validate-only` checks the file layout when a
+sample has had person values removed; it does not validate cell values.
+After validation, run the script once more with `--output <path-outside-repo>`
+to create one consolidated TSV. It fails on conflicting snapshots for one
+date unless `--latest-per-day` is explicitly selected. Load only that prepared
+file once into `tbl_import_personalakte_scd_backfill`; the raw attachments do
+not need to be uploaded or loaded separately.
+
+For procedure tests, use small synthetic people and snapshot dates in the
+procedure fixture suite under
+`procedures/tests/proc_uebertrag_personalakte/` and
+`procedures/tests/proc_ueb_personalakte_scd_reconcile/`. Run it from db-workbench's
+**Stored procedure development → Run isolated fixture suite in LOCAL** menu.
+The runner loads these synthetic fixtures once into a disposable schema; it
+does not read the configured LOCAL tables. Do not use the personal exports as
+test fixtures.
+`proc_uebertrag_personalakte` also updates the materialized current table and
+snapshot history, so run a full replay in a disposable database or LOCAL copy,
+not against a shared LOCAL schema. The later production backfill is one staging
+load followed by one replay call per snapshot date; those calls process the
+already loaded rows and do not import the source files again.
+
+Do not replace the live `tbl_import_personalakte`: other procedures read it as
+the latest import. Clear `tbl_ueb_personalakte_scd_snapshot` and
 `tbl_ueb_personalakte_scd`, then set `@personalakte_scd_backfill = 1` and
 `@personalakte_scd_backfill_date` to each snapshot date, oldest to newest, and
 call `proc_uebertrag_personalakte` once per date. The procedure reads only that
