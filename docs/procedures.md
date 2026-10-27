@@ -68,10 +68,15 @@ the Outlook macro to `C:\db-report\.worktrees\personalakte-backfill\raw`
 or another ignored folder under `.worktrees` or `consumers`. Run
 `python scripts/prepare_personalliste_backfill.py <raw-folder> --validate-only`
 to validate the complete files. The script locates the report header by its
-labels while retaining empty separator columns, reads the `Druckdatum` value
-for `filedate`, and checks the footer count, dates, and duplicate personnel
-numbers. `--structure-only --validate-only` checks the file layout when a
-sample has had person values removed; it does not validate cell values.
+labels while retaining empty separator columns. The `PersNr` header is needed
+to locate the mutable, nullable personnel number; rows with a blank `PersNr`
+are excluded after checking the source row count against the footer. Every
+other source column may be absent, and absent columns and blank cells are
+emitted as SQL `NULL`. It uses `Druckdatum` for `filedate` and the preprocessing
+time for `lastinsertupdate`, and checks dates and duplicate nonblank personnel
+numbers within each snapshot. `--structure-only
+--validate-only` checks the file layout when a sample has had person values
+removed; it does not validate cell values.
 After validation, run the script once more with `--output <path>` under
 `.worktrees` or `consumers` to create one consolidated TSV. The default output
 is beside the raw folder. It fails on conflicting snapshots for one date unless

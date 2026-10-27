@@ -79,24 +79,9 @@ HEADER_TO_COLUMN = {
     "geb datum": "gebdatum",
 }
 
-REQUIRED_HEADERS = {
-    "pers_nr",
-    "name_vorname",
-    "zeitarbeitsfirma",
-    "oe_der_person",
-    "schicht",
-    "info",
-    "beginn_besch",
-    "ende_besch",
-    "geschlecht",
-    "taetigkeit",
-    "team",
-    "betriebsrat",
-    "einstellungsdatum",
-    "taetigkeit2",
-    "funktion",
-    "gebdatum",
-}
+# PersNr is needed to locate the source column; its values may be blank. Every
+# other report field may be absent and will be emitted as SQL NULL.
+REQUIRED_HEADERS = {"pers_nr"}
 
 DATE_COLUMNS = {
     "beginn_besch",
@@ -116,6 +101,7 @@ class Snapshot:
     printed_at: datetime
     sha256: str
     row_count: int
+    skipped_null_persnr: int = 0
 
 
 @dataclass(frozen=True)
@@ -187,7 +173,7 @@ def load_rows_and_header(
         candidates.append((score, rows, header_index, header_indices, delimiter))
 
     if not candidates:
-        raise ReportError(f"{path.name}: couldn't find the complete report header")
+        raise ReportError(f"{path.name}: couldn't find a report header containing PersNr")
     candidates.sort(key=lambda item: item[0], reverse=True)
     _, rows, header_index, header_indices, delimiter = candidates[0]
     return rows, header_index, header_indices, delimiter
@@ -242,8 +228,10 @@ def parse_footer_count(rows: list[list[str]], header_index: int, path: Path) -> 
     raise ReportError(f"{path.name}: 'Anzahl Personen' footer wasn't found")
 
 
-def parse_person_number(value: str, path: Path, row_number: int) -> int:
+def parse_person_number(value: str, path: Path, row_number: int) -> int | None:
     value = value.strip()
+    if not value:
+        return None
     if not re.fullmatch(r"\d+", value):
         raise ReportError(f"{path.name}: invalid PersNr. on CSV row {row_number}")
     return int(value)
@@ -278,11 +266,18 @@ def structural_data_row_count(report: ParsedReport, path: Path) -> int:
     return row_count
 
 
-def normalized_data_rows(report: ParsedReport, path: Path) -> list[list[str | int | None]]:
+def normalized_data_rows(
+    report: ParsedReport,
+    path: Path,
+    lastinsertupdate: str | None = None,
+) -> list[list[str | int | None]]:
+    if lastinsertupdate is None:
+        lastinsertupdate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     width = len(report.rows[report.header_index])
     person_index = report.header_indices["pers_nr"]
     seen: set[int] = set()
     normalized_rows: list[list[str | int | None]] = []
+    source_row_count = 0
 
     for row_index in range(report.header_index + 1, report.footer_index):
         row = report.rows[row_index]
@@ -290,6 +285,7 @@ def normalized_data_rows(report: ParsedReport, path: Path) -> list[list[str | in
             continue
         if find_header([row]) is not None:
             continue  # Some report versions repeat headings on page breaks.
+        source_row_count += 1
         if len(row) > width:
             if any(cell.strip() for cell in row[width:]):
                 raise ReportError(f"{path.name}: extra CSV fields on row {row_index + 1}")
@@ -300,6 +296,8 @@ def normalized_data_rows(report: ParsedReport, path: Path) -> list[list[str | in
             row = row + [""] * (width - len(row))
 
         person_number = parse_person_number(row[person_index], path, row_index + 1)
+        if person_number is None:
+            continue
         if person_number in seen:
             raise ReportError(f"{path.name}: duplicate PersNr. on CSV row {row_index + 1}")
         seen.add(person_number)
@@ -316,27 +314,25 @@ def normalized_data_rows(report: ParsedReport, path: Path) -> list[list[str | in
             elif column in DATE_COLUMNS:
                 values[column] = parse_date(cell, column, path, row_index + 1)
             else:
-                values[column] = cell
+                values[column] = cell or None
 
-        if not str(values["name_vorname"] or "").strip():
-            raise ReportError(f"{path.name}: missing Name, Vorname on CSV row {row_index + 1}")
-
-        stamp = report.printed_at.strftime("%Y-%m-%d %H:%M:%S")
-        values["lastinsertupdate"] = stamp
-        values["filedate"] = stamp
+        values["lastinsertupdate"] = lastinsertupdate
+        values["filedate"] = report.printed_at.strftime("%Y-%m-%d %H:%M:%S")
         # TSV LOAD DATA uses \N as SQL NULL. A literal backslash-N is doubled.
         normalized_rows.append(list(values.values()))
 
-    if len(normalized_rows) != report.footer_count:
+    if source_row_count != report.footer_count:
         raise ReportError(
             f"{path.name}: footer says {report.footer_count} people, "
-            f"but {len(normalized_rows)} data rows were parsed"
+            f"but {source_row_count} source rows were parsed"
         )
     return normalized_rows
 
 
 def parse_report(
-    path: Path, text: str | None = None
+    path: Path,
+    text: str | None = None,
+    lastinsertupdate: str | None = None,
 ) -> tuple[ParsedReport, list[list[str | int | None]]]:
     rows, header_index, header_indices, delimiter = load_rows_and_header(path, text)
     printed_at = parse_printed_at(rows, header_index, path)
@@ -350,7 +346,7 @@ def parse_report(
         header_indices=header_indices,
         delimiter=delimiter,
     )
-    normalized_rows = normalized_data_rows(report, path)
+    normalized_rows = normalized_data_rows(report, path, lastinsertupdate)
     return report, normalized_rows
 
 
@@ -375,11 +371,15 @@ def inspect_snapshot(path: Path, structure_only: bool = False) -> Snapshot:
     else:
         report, normalized_rows = parse_report(path, text)
         row_count = len(normalized_rows)
+        skipped_null_persnr = report.footer_count - row_count
+    if structure_only:
+        skipped_null_persnr = 0
     return Snapshot(
         path=path,
         printed_at=printed_at if structure_only else report.printed_at,
         sha256=digest,
         row_count=row_count,
+        skipped_null_persnr=skipped_null_persnr,
     )
 
 
@@ -437,6 +437,7 @@ def write_prepared_file(snapshots: list[Snapshot], output: Path) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     total_rows = 0
+    prepared_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -459,7 +460,7 @@ def write_prepared_file(snapshots: list[Snapshot], output: Path) -> int:
                         f"{snapshot.path.name}: file changed after validation; rerun preprocessing"
                     )
                 text = decode_report_bytes(raw, snapshot.path)
-                _, rows = parse_report(snapshot.path, text)
+                _, rows = parse_report(snapshot.path, text, prepared_at)
                 for row in rows:
                     temp.write("\t".join(escape_load_data(value) for value in row) + "\n")
                 total_rows += len(rows)
@@ -523,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
         snapshots = [inspect_snapshot(path, structure_only=args.structure_only) for path in files]
         selected, dropped = choose_snapshots(snapshots, args.latest_per_day)
         total_rows = sum(snapshot.row_count for snapshot in selected)
+        skipped_null_persnr = sum(snapshot.skipped_null_persnr for snapshot in selected)
         output = args.output or args.input_dir.parent / "prepared_personalakte_backfill.tsv"
         if not args.validate_only:
             written_rows = write_prepared_file(selected, output)
@@ -534,12 +536,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Raw CSV files checked: {len(files)}")
         print(f"Snapshots selected: {len(selected)}")
         print(f"Exact duplicates or superseded same-day files: {dropped}")
-        print(f"Person rows: {total_rows}")
+        if args.structure_only:
+            print(f"Source rows validated against footer: {total_rows}")
+        else:
+            print(f"Person rows prepared: {total_rows}")
+            print(f"Rows skipped for blank PersNr.: {skipped_null_persnr}")
         print(f"Druckdatum date range: {first_date} through {last_date}")
         if args.structure_only:
             print("Headers, Druckdatum, row widths, and footer counts: valid; cell values were not checked")
         else:
-            print("Footer counts, row widths, required headers, dates, and duplicate PersNr. values: valid")
+            print("Footer counts, row widths, PersNr. header, dates, and duplicate nonblank PersNr. values: valid")
         if args.validate_only:
             print("Validation only; no prepared file was written.")
         else:
