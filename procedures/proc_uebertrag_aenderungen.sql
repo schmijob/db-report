@@ -211,7 +211,7 @@ IF TRUE OR NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen_fehlzeiten ueb WH
 				-- nachgetragene Beschäftigungszeiträume in Buchungen einpflegen
 				INSERT INTO tbl_ueb_fz_buchungen(persnr, datum, `status`, schichtgruppe, schicht, anwesenheit, filedate)
 				WITH step1 AS (
-					SELECT p.persnr
+					SELECT p.persnr_alt
 					, d.datum
 					, ifnull(k.wert, if(d.arbeitstag, '*', '')) AS `status`
 					, p.schichtgruppe
@@ -223,8 +223,8 @@ IF TRUE OR NOT EXISTS (SELECT 1 FROM tbl_uebertrag_aenderungen_fehlzeiten ueb WH
 					LEFT JOIN tbl_ueb_personalakte_scd p
 					  ON d.datum BETWEEN p.beginn AND p.ende
 					 AND d.datum BETWEEN p.gueltig_von AND p.gueltig_bis
-					LEFT JOIN tbl_ueb_fz_buchungen b ON d.datum = b.Datum AND p.persnr = b.PersNr
-					LEFT JOIN tbl_ueb_aend_fz_kalender k ON k.persnr = p.persnr AND k.datum = d.datum AND k.feld = 'Fehlzeit'
+					LEFT JOIN tbl_ueb_fz_buchungen b ON d.datum = b.Datum AND p.persnr_alt = b.PersNr
+					LEFT JOIN tbl_ueb_aend_fz_kalender k ON k.persnr = p.persnr_alt AND k.datum = d.datum AND k.feld = 'Fehlzeit'
 					LEFT JOIN tbl_schichten s ON d.schichtindex = s.Schichtindex AND p.schichtgruppe = s.Schichtgruppe
 					
 					WHERE d.datum BETWEEN '2022-08-01' AND CURDATE() - INTERVAL 7 DAY

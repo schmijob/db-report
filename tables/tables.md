@@ -8,11 +8,18 @@ meaning and approved usage in `docs/architecture/`.
 - **Grain:** one row per `persnr` for each maximal interval during which the
   normalized personalakte business attributes are unchanged.
 - **Key:** `(persnr, gueltig_von)`.
+- **Identity:** `persnr` is the canonical number for the person across
+  recorded PersNr changes. `persnr_alt` is the source number active during
+  that interval. PersNr changes create SCD boundaries; the old-to-new links
+  come from `tbl_uebertrag_aenderungen_werte` (`wert` = old, `persnr` = new).
 - **Validity:** `gueltig_von` and `gueltig_bis` are inclusive `DATE` bounds;
   the current version ends at `9999-12-31`. These fields describe the validity
   of the complete row and are independent of employment dates `beginn`/`ende`.
-- **Join:** join by `persnr` and the fact's date between the validity bounds.
-  The composite index begins with `persnr` for this access pattern.
+- **Join:** join facts that contain historical source numbers by `persnr_alt`
+  and the fact's date between the validity bounds. Use canonical `persnr` to
+  group a person across number changes. The primary key supports canonical
+  access, and `(persnr_alt, gueltig_von, gueltig_bis)` supports historical
+  source-number lookups.
 - **Source:** rebuilt from compact normalized snapshot history in
   `tbl_ueb_personalakte_scd_snapshot` and effective-dated records in
   `tbl_uebertrag_aenderungen_werte`.
@@ -23,8 +30,9 @@ meaning and approved usage in `docs/architecture/`.
   snapshot. The issue is recorded in
   `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive
   change remains authoritative over an older snapshot.
-- **Storage:** identical consecutive business values reuse one version;
-  `filedate` and `last_insert_update` do not split intervals.
+- **Storage:** identical consecutive normalized values, including
+  `persnr_alt`, reuse one version; `filedate` and `last_insert_update` do not
+  split intervals.
 - **Coverage:** migration seeds the current snapshot only. Dates before the
   first loaded snapshot require historical CSV replay and must not be assumed
   to have a known state.
@@ -35,13 +43,16 @@ meaning and approved usage in `docs/architecture/`.
   snapshot values. It retains fallback evidence for retroactive or conflicting
   changes without keeping every daily export.
 - **Key:** `(persnr, gueltig_von)` with inclusive validity bounds.
+- **Identity:** `persnr` is the raw number in that snapshot; reconciliation
+  copies it to the serving SCD's `persnr_alt` before resolving canonical IDs.
 - **Use:** internal reconciliation input; reporting joins should use
   `tbl_ueb_personalakte_scd`.
 
 ## `tbl_ueb_personalakte_scd_reconciliation`
 
-- **Grain:** one snapshot fallback decision per person, effective boundary,
-  and field.
+- **Grain:** one snapshot fallback decision or PersNr snapshot handoff per
+  person, effective boundary, and field. `persnr_alias_handoff` records when
+  a linked new-number snapshot supersedes a still-present old-number row.
 - **Use:** inspect fields where equally recent change rows disagree, a change
   date is invalid, or a change known at snapshot time disagrees with the
   snapshot. Reconciliation refreshes this table whenever it rebuilds the

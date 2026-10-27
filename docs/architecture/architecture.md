@@ -120,11 +120,19 @@ tbl_import_personalakte_scd_backfill (historical replay only)
                 +-> external consumers
 ```
 
-`tbl_ueb_personalakte_scd.gueltig_von` and `gueltig_bis` are inclusive validity
-dates for the complete normalized row. They are separate from employment dates
-`beginn` and `ende`. Internal joins use `persnr` plus the fact's date within the
-validity interval. The snapshot baseline retains only changed states, not one
-row per person per day. For each effective date and field, the latest
+`tbl_ueb_personalakte_scd.persnr` is the canonical person number, resolved to
+the latest number in the recorded PersNr-change chain. `persnr_alt` is the
+source PersNr active during that row's validity interval. It changes as a
+normal SCD field, including at the effective date recorded by the change log.
+The key remains `(persnr, gueltig_von)`. Join historical facts by their source
+PersNr to `persnr_alt` and the fact's date within the validity interval; use
+`persnr` to group rows for the same person across PersNr changes. The alias/date
+index supports that historical lookup.
+
+`gueltig_von` and `gueltig_bis` are inclusive validity dates for the complete
+normalized row. They are separate from employment dates `beginn` and `ende`.
+The snapshot baseline retains only changed states, not one row per person per
+day. For each effective date and field, the latest
 `aenderungsdatum` in `tbl_uebertrag_aenderungen_werte` is authoritative, so
 retroactive changes can revise earlier intervals. If equally recent change
 rows disagree, a date cannot be parsed, or a change already present by the
@@ -133,9 +141,15 @@ snapshot value for that field and records the conflict in
 `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive change
 is resolved in favor of the change log.
 
-`tbl_ueb_personalakte` remains the materialized one-row-per-person current
-projection. `vp_personal_u` exposes the normalized current-state view. Internal
-date-sensitive queries should use `tbl_ueb_personalakte_scd`.
+PersNr-change rows in `tbl_uebertrag_aenderungen_werte` use `wert` for the old
+number and `persnr` for the new number. Reconciliation resolves chains from
+those links and keeps each historical number in `persnr_alt`; overlapping
+source snapshots for linked numbers hand off at the first new-number snapshot
+and are recorded in the reconciliation table. Any other overlapping canonical
+intervals stop reconciliation for inspection. `tbl_ueb_personalakte` remains
+the materialized one-row-per-person current projection. `vp_personal_u` exposes
+the normalized current-state view. Internal date-sensitive queries should use
+`tbl_ueb_personalakte_scd`.
 
 ## Logging / Infrastructure
 

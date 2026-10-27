@@ -14,18 +14,18 @@ ALTER TABLE `tbl_import_personalakte_scd_backfill`
   ADD KEY `ix_personalakte_scd_backfill_person_filedate` (`pers_nr`, `filedate`);
 
 ALTER TABLE `tbl_ueb_personalakte_scd`
+  ADD COLUMN `persnr_alt` int(13) DEFAULT NULL AFTER `persnr`,
   ADD COLUMN `gueltig_von` date NOT NULL,
   ADD COLUMN `gueltig_bis` date NOT NULL,
   DROP PRIMARY KEY,
   ADD PRIMARY KEY (`persnr`, `gueltig_von`),
-  ADD KEY `ix_personalakte_scd_person_date` (`persnr`, `gueltig_von`, `gueltig_bis`);
+  ADD KEY `ix_personalakte_scd_alt_date` (`persnr_alt`, `gueltig_von`, `gueltig_bis`);
 
 ALTER TABLE `tbl_ueb_personalakte_scd_snapshot`
   ADD COLUMN `gueltig_von` date NOT NULL,
   ADD COLUMN `gueltig_bis` date NOT NULL,
   DROP PRIMARY KEY,
-  ADD PRIMARY KEY (`persnr`, `gueltig_von`),
-  ADD KEY `ix_personalakte_scd_snapshot_person_date` (`persnr`, `gueltig_von`, `gueltig_bis`);
+  ADD PRIMARY KEY (`persnr`, `gueltig_von`);
 
 CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd_reconciliation` (
   `persnr` int(13) NOT NULL,
@@ -50,7 +50,15 @@ SELECT `persnr`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
      , `last_insert_update`, `filedate`, COALESCE(DATE(`filedate`), CURDATE()), '9999-12-31'
   FROM `tbl_ueb_personalakte`;
 
-INSERT INTO tbl_ueb_personalakte_scd SELECT * FROM tbl_ueb_personalakte_scd_snapshot;
+INSERT INTO tbl_ueb_personalakte_scd (
+      `persnr`, `persnr_alt`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
+    , `taetigkeit`, `team`, `br`, `übernahme`, `taetigkeit2`, `funktion`
+    , `last_insert_update`, `filedate`, `gueltig_von`, `gueltig_bis`
+)
+SELECT `persnr`, `persnr`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
+     , `taetigkeit`, `team`, `br`, `übernahme`, `taetigkeit2`, `funktion`
+     , `last_insert_update`, `filedate`, `gueltig_von`, `gueltig_bis`
+  FROM tbl_ueb_personalakte_scd_snapshot;
 
 CREATE OR REPLACE VIEW `vp_personal_u` AS
 SELECT p.`persnr` AS `persnr`

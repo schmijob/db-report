@@ -54,7 +54,7 @@ personal AS (
         / NULLIF(SUM(b.anwesenheit <> 'frei'), 0) AS anw
     FROM vp_buchungen b
     JOIN tbl_ueb_personalakte_scd p
-      ON b.persnr = p.persnr
+      ON b.persnr = p.persnr_alt
      AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
     JOIN tbl_stamm_kategorie_abteilung k 
       ON p.taetigkeit = k.`tätigkeit`

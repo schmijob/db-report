@@ -138,7 +138,7 @@ base AS (
       ON d.datum = b.datum
 
     LEFT JOIN tbl_ueb_personalakte_scd p
-           ON p.persnr = b.persnr
+           ON p.persnr_alt = b.persnr
           AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 
     LEFT JOIN tbl_stamm_kategorie_abteilung k
@@ -348,7 +348,7 @@ temp_double_shift AS (
           ON d.datum = b.datum
 
         JOIN tbl_ueb_personalakte_scd p
-          ON p.persnr = b.persnr
+          ON p.persnr_alt = b.persnr
          AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 
         WHERE p.eg = 'ZAK'

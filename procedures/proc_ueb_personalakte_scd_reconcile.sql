@@ -3,7 +3,14 @@
 DROP PROCEDURE IF EXISTS `proc_ueb_personalakte_scd_reconcile`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_ueb_personalakte_scd_reconcile`()
 SQL SECURITY DEFINER BEGIN
+    DECLARE var_map_iterations INT DEFAULT 0;
+    DECLARE var_map_changes INT DEFAULT 0;
+
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_events;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_persnr_links;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_persnr_map;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_snapshots;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_identity_handoffs;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_bounds;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_state;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_candidates;
@@ -16,25 +23,162 @@ SQL SECURITY DEFINER BEGIN
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_markers;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_groups;
 
-    CREATE TEMPORARY TABLE tmp_pa_scd_events ENGINE=InnoDB AS
-    SELECT persnr,
-           aenderungsdatum,
-           CONVERT(feld USING utf8mb4) COLLATE utf8mb4_unicode_ci AS feld,
-           CONVERT(wert USING utf8mb4) COLLATE utf8mb4_unicode_ci AS wert,
-           gueltig_von,
-           gueltig_bis,
-           filedate
+    -- The change log records a new PersNr in `persnr` and the old one in
+    -- `wert`. Resolve chains to the latest canonical number; keep each
+    -- interval's source number in persnr_alt.
+    CREATE TEMPORARY TABLE tmp_pa_scd_persnr_links ENGINE=InnoDB AS
+    SELECT DISTINCT CAST(TRIM(wert) AS UNSIGNED) AS old_persnr,
+                    persnr AS new_persnr
       FROM tbl_uebertrag_aenderungen_werte
-     WHERE CONVERT(beschreibung USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     WHERE LOWER(TRIM(feld)) = 'personalnummer'
+       AND TRIM(wert) REGEXP '^[0-9]+$'
+       AND CAST(TRIM(wert) AS UNSIGNED) > 0
+       AND persnr > 0
+       AND CAST(TRIM(wert) AS UNSIGNED) <> persnr
+       AND LOWER(COALESCE(beschreibung, '')) NOT LIKE '(gel%';
+
+    IF EXISTS (
+        SELECT old_persnr
+          FROM tmp_pa_scd_persnr_links
+         GROUP BY old_persnr
+        HAVING COUNT(DISTINCT new_persnr) > 1
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A source PersNr maps to multiple new PersNr values';
+    END IF;
+
+    ALTER TABLE tmp_pa_scd_persnr_links
+      ADD PRIMARY KEY (old_persnr),
+      ADD KEY ix_tmp_pa_scd_persnr_links_new (new_persnr);
+
+    CREATE TEMPORARY TABLE tmp_pa_scd_persnr_map (
+        source_persnr INT NOT NULL,
+        canonical_persnr INT NOT NULL,
+        PRIMARY KEY (source_persnr),
+        KEY ix_tmp_pa_scd_persnr_map_canonical (canonical_persnr)
+    ) ENGINE=InnoDB;
+
+    INSERT INTO tmp_pa_scd_persnr_map (source_persnr, canonical_persnr)
+    SELECT source_persnr, source_persnr
+      FROM (
+            SELECT persnr AS source_persnr
+              FROM tbl_ueb_personalakte_scd_snapshot
+            UNION
+            SELECT old_persnr FROM tmp_pa_scd_persnr_links
+            UNION
+            SELECT new_persnr FROM tmp_pa_scd_persnr_links
+      ) source_ids;
+
+    UPDATE tmp_pa_scd_persnr_map m
+    JOIN tmp_pa_scd_persnr_links l ON l.old_persnr = m.source_persnr
+       SET m.canonical_persnr = l.new_persnr;
+
+    SET var_map_changes = 1;
+    WHILE var_map_changes > 0 DO
+        UPDATE tmp_pa_scd_persnr_map m
+        JOIN tmp_pa_scd_persnr_links l ON l.old_persnr = m.canonical_persnr
+           SET m.canonical_persnr = l.new_persnr
+         WHERE m.canonical_persnr <> l.new_persnr;
+        SET var_map_changes = ROW_COUNT();
+        SET var_map_iterations = var_map_iterations + 1;
+        IF var_map_iterations > 1000 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'PersNr change history contains a cycle';
+        END IF;
+    END WHILE;
+
+    CREATE TEMPORARY TABLE tmp_pa_scd_snapshots LIKE tbl_ueb_personalakte_scd;
+    ALTER TABLE tmp_pa_scd_snapshots
+      DROP PRIMARY KEY,
+      DROP KEY ix_personalakte_scd_alt_date;
+
+    INSERT INTO tmp_pa_scd_snapshots (
+          persnr, persnr_alt, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
+        , taetigkeit, team, br, `übernahme`, taetigkeit2, funktion
+        , last_insert_update, filedate, gueltig_von, gueltig_bis
+    )
+    SELECT s.persnr, s.persnr, s.`name`, s.pdl, s.oe, s.schichtgruppe, s.eg, s.beginn, s.ende
+         , s.taetigkeit, s.team, s.br, s.`übernahme`, s.taetigkeit2, s.funktion
+         , s.last_insert_update, s.filedate, s.gueltig_von, s.gueltig_bis
+      FROM tbl_ueb_personalakte_scd_snapshot s;
+
+    -- If an old source number remains in later exports, stop its snapshot
+    -- history when the linked new-number history first appears. The effective
+    -- date inside that interval still comes from the change log event below.
+    CREATE TEMPORARY TABLE tmp_pa_scd_identity_handoffs ENGINE=InnoDB AS
+    SELECT l.old_persnr,
+           l.new_persnr,
+           MIN(s.gueltig_von) AS new_first_date
+      FROM tmp_pa_scd_persnr_links l
+      JOIN tbl_ueb_personalakte_scd_snapshot s
+        ON s.persnr = l.new_persnr
+     WHERE EXISTS (
+            SELECT 1
+              FROM tbl_ueb_personalakte_scd_snapshot old_snapshot
+             WHERE old_snapshot.persnr = l.old_persnr
+               AND old_snapshot.gueltig_bis >= s.gueltig_von
+       )
+     GROUP BY l.old_persnr, l.new_persnr;
+
+    ALTER TABLE tmp_pa_scd_identity_handoffs
+      ADD PRIMARY KEY (old_persnr);
+
+    DELETE s
+      FROM tmp_pa_scd_snapshots s
+      JOIN tmp_pa_scd_identity_handoffs h
+        ON h.old_persnr = s.persnr
+     WHERE s.gueltig_von >= h.new_first_date;
+
+    UPDATE tmp_pa_scd_snapshots s
+    JOIN tmp_pa_scd_identity_handoffs h
+      ON h.old_persnr = s.persnr
+       SET s.gueltig_bis = DATE_SUB(h.new_first_date, INTERVAL 1 DAY)
+     WHERE s.gueltig_von < h.new_first_date
+       AND s.gueltig_bis >= h.new_first_date;
+
+    UPDATE tmp_pa_scd_snapshots s
+    JOIN tmp_pa_scd_persnr_map m ON m.source_persnr = s.persnr
+       SET s.persnr = m.canonical_persnr;
+
+    IF EXISTS (
+        SELECT 1
+          FROM tmp_pa_scd_snapshots a
+          JOIN tmp_pa_scd_snapshots b
+            ON b.persnr = a.persnr
+           AND (b.gueltig_von > a.gueltig_von
+                OR (b.gueltig_von = a.gueltig_von AND b.persnr_alt > a.persnr_alt))
+           AND b.gueltig_von <= a.gueltig_bis
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Canonical PersNr histories overlap; inspect the snapshot intervals';
+    END IF;
+
+    ALTER TABLE tmp_pa_scd_snapshots
+      ADD PRIMARY KEY (persnr, gueltig_von);
+
+    CREATE TEMPORARY TABLE tmp_pa_scd_events ENGINE=InnoDB AS
+    SELECT COALESCE(m.canonical_persnr, e.persnr) AS persnr,
+           e.aenderungsdatum,
+           CASE WHEN LOWER(TRIM(e.feld)) = 'personalnummer' THEN 'persnr_alt'
+                ELSE CONVERT(e.feld USING utf8mb4) COLLATE utf8mb4_unicode_ci END AS feld,
+           CASE WHEN LOWER(TRIM(e.feld)) = 'personalnummer' THEN CAST(e.persnr AS CHAR)
+                ELSE CONVERT(e.wert USING utf8mb4) COLLATE utf8mb4_unicode_ci END AS wert,
+           e.gueltig_von,
+           e.gueltig_bis,
+           e.filedate
+      FROM tbl_uebertrag_aenderungen_werte e
+      LEFT JOIN tmp_pa_scd_persnr_map m ON m.source_persnr = e.persnr
+     WHERE CONVERT(e.beschreibung USING utf8mb4) COLLATE utf8mb4_unicode_ci
                NOT LIKE _utf8mb4'(Gelöscht)%' COLLATE utf8mb4_unicode_ci
-       AND CONVERT(feld USING utf8mb4) COLLATE utf8mb4_unicode_ci IN (
+       AND (LOWER(TRIM(e.feld)) = 'personalnummer'
+         OR CONVERT(e.feld USING utf8mb4) COLLATE utf8mb4_unicode_ci IN (
              _utf8mb4'Nachname', _utf8mb4'Vorname'
            , _utf8mb4'Organisationseinheit der Person'
            , _utf8mb4'10 Schicht', _utf8mb4'Info 2', _utf8mb4'13 Team', _utf8mb4'Betriebsrat'
            , _utf8mb4'Beginn Beschäftigung'
            , _utf8mb4'Ende Beschäftigung'
            , _utf8mb4'Tätigkeit', _utf8mb4'14 Tätigkeit'
-       );
+       ));
     ALTER TABLE tmp_pa_scd_events
       ADD KEY ix_tmp_pa_scd_events_person_date (persnr, gueltig_von, gueltig_bis, feld);
 
@@ -46,11 +190,11 @@ SQL SECURITY DEFINER BEGIN
 
     INSERT IGNORE INTO tmp_pa_scd_bounds (persnr, datum)
     SELECT persnr, gueltig_von
-      FROM tbl_ueb_personalakte_scd_snapshot;
+      FROM tmp_pa_scd_snapshots;
 
     INSERT IGNORE INTO tmp_pa_scd_bounds (persnr, datum)
     SELECT persnr, DATE_ADD(gueltig_bis, INTERVAL 1 DAY)
-      FROM tbl_ueb_personalakte_scd_snapshot
+      FROM tmp_pa_scd_snapshots
      WHERE gueltig_bis < '9999-12-31';
 
     INSERT IGNORE INTO tmp_pa_scd_bounds (persnr, datum)
@@ -58,7 +202,7 @@ SQL SECURITY DEFINER BEGIN
       FROM tmp_pa_scd_events e
       JOIN (
             SELECT persnr, MIN(gueltig_von) AS min_datum, MAX(gueltig_bis) AS max_datum
-              FROM tbl_ueb_personalakte_scd_snapshot
+              FROM tmp_pa_scd_snapshots
              GROUP BY persnr
       ) c ON c.persnr = e.persnr
      WHERE e.gueltig_bis >= c.min_datum
@@ -69,16 +213,17 @@ SQL SECURITY DEFINER BEGIN
       FROM tmp_pa_scd_events e
       JOIN (
             SELECT persnr, MIN(gueltig_von) AS min_datum, MAX(gueltig_bis) AS max_datum
-              FROM tbl_ueb_personalakte_scd_snapshot
+              FROM tmp_pa_scd_snapshots
              GROUP BY persnr
       ) c ON c.persnr = e.persnr
      WHERE e.gueltig_bis >= c.min_datum
        AND e.gueltig_von <= c.max_datum
        AND e.gueltig_bis < c.max_datum;
 
-    CREATE TEMPORARY TABLE tmp_pa_scd_state LIKE tbl_ueb_personalakte_scd_snapshot;
+    CREATE TEMPORARY TABLE tmp_pa_scd_state LIKE tbl_ueb_personalakte_scd;
     ALTER TABLE tmp_pa_scd_state
       DROP PRIMARY KEY,
+      DROP KEY ix_personalakte_scd_alt_date,
       ADD COLUMN boundary_date DATE NOT NULL,
       ADD COLUMN base_gueltig_von DATE NOT NULL,
       ADD COLUMN base_gueltig_bis DATE NOT NULL,
@@ -87,7 +232,7 @@ SQL SECURITY DEFINER BEGIN
 
     INSERT INTO tmp_pa_scd_state
     SELECT s.*, b.datum, s.gueltig_von, s.gueltig_bis, NULL
-      FROM tbl_ueb_personalakte_scd_snapshot s
+      FROM tmp_pa_scd_snapshots s
       JOIN tmp_pa_scd_bounds b
         ON b.persnr = s.persnr
        AND b.datum BETWEEN s.gueltig_von AND s.gueltig_bis;
@@ -134,6 +279,10 @@ SQL SECURITY DEFINER BEGIN
     CREATE TEMPORARY TABLE tmp_pa_scd_wide ENGINE=InnoDB AS
     SELECT persnr,
            boundary_date,
+           MAX(CASE WHEN feld = 'persnr_alt' THEN value_count END) AS cnt_persnr_alt,
+           MAX(CASE WHEN feld = 'persnr_alt' THEN event_value END) AS value_persnr_alt,
+           MAX(CASE WHEN feld = 'persnr_alt' THEN event_values END) AS values_persnr_alt,
+           MAX(CASE WHEN feld = 'persnr_alt' THEN event_filedate END) AS filedate_persnr_alt,
            MAX(CASE WHEN feld = 'Nachname' THEN value_count END) AS cnt_nachname,
            MAX(CASE WHEN feld = 'Nachname' THEN event_value END) AS value_nachname,
            MAX(CASE WHEN feld = 'Nachname' THEN event_values END) AS values_nachname,
@@ -184,7 +333,22 @@ SQL SECURITY DEFINER BEGIN
       ADD KEY ix_tmp_pa_scd_wide_person_date (persnr, boundary_date);
 
     CREATE TEMPORARY TABLE tmp_pa_scd_conflicts ENGINE=InnoDB AS
-    SELECT s.persnr, s.boundary_date AS datum, 'Nachname' AS feld,
+    SELECT s.persnr, s.boundary_date AS datum, 'persnr_alt' AS feld,
+           CAST(s.persnr_alt AS CHAR) AS snapshot_wert,
+           w.values_persnr_alt AS aenderungswerte,
+           'Conflicting latest aenderungen values; snapshot fallback' AS grund
+      FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
+     WHERE w.cnt_persnr_alt > 1
+    UNION ALL
+    SELECT s.persnr, s.boundary_date, 'persnr_alt',
+           CAST(s.persnr_alt AS CHAR), w.values_persnr_alt,
+           'Snapshot disagrees with aenderungen already known at filedate; snapshot fallback'
+      FROM tmp_pa_scd_state s JOIN tmp_pa_scd_wide w USING (persnr, boundary_date)
+     WHERE w.cnt_persnr_alt = 1
+       AND (w.filedate_persnr_alt IS NULL OR s.filedate IS NULL OR w.filedate_persnr_alt <= s.filedate)
+       AND NOT (CAST(w.value_persnr_alt AS UNSIGNED) <=> s.persnr_alt)
+    UNION ALL
+    SELECT s.persnr, s.boundary_date, 'Nachname',
            CAST(SUBSTRING_INDEX(s.`name`, ', ', 1) AS CHAR) AS snapshot_wert,
            w.values_nachname AS aenderungswerte,
            'Conflicting latest aenderungen values; snapshot fallback' AS grund
@@ -370,11 +534,32 @@ SQL SECURITY DEFINER BEGIN
     SELECT persnr, datum, feld, snapshot_wert, aenderungswerte, grund
       FROM tmp_pa_scd_conflicts;
 
+    INSERT INTO tbl_ueb_personalakte_scd_reconciliation (
+        persnr, datum, feld, snapshot_wert, aenderungswerte, grund
+    )
+    SELECT m.canonical_persnr,
+           h.new_first_date,
+           'persnr_alias_handoff',
+           GROUP_CONCAT(DISTINCT h.old_persnr ORDER BY h.old_persnr),
+           GROUP_CONCAT(DISTINCT h.new_persnr ORDER BY h.new_persnr),
+           'Linked source-number snapshot overlaps; later PersNr snapshot takes over'
+      FROM tmp_pa_scd_identity_handoffs h
+      JOIN tmp_pa_scd_persnr_map m
+        ON m.source_persnr = h.old_persnr
+     GROUP BY m.canonical_persnr, h.new_first_date;
+
     UPDATE tmp_pa_scd_state s
     LEFT JOIN tmp_pa_scd_wide w
       ON w.persnr = s.persnr
      AND w.boundary_date = s.boundary_date
-       SET s.`name` = CASE
+       SET s.persnr_alt = CASE
+             WHEN w.cnt_persnr_alt = 1
+              AND ((s.filedate IS NOT NULL AND w.filedate_persnr_alt > s.filedate)
+                   OR CAST(w.value_persnr_alt AS UNSIGNED) <=> s.persnr_alt)
+               THEN CAST(w.value_persnr_alt AS UNSIGNED)
+             ELSE s.persnr_alt
+           END,
+           s.`name` = CASE
              WHEN COALESCE(w.cnt_nachname, 0) = 0 AND COALESCE(w.cnt_vorname, 0) = 0 THEN s.`name`
              ELSE CONCAT(
                     CASE WHEN w.cnt_nachname = 1
@@ -472,6 +657,7 @@ SQL SECURITY DEFINER BEGIN
            s.boundary_date,
            s.segment_end,
            LAG(s.segment_end) OVER (PARTITION BY s.persnr ORDER BY s.boundary_date) AS prev_segment_end,
+           LAG(s.persnr_alt) OVER (PARTITION BY s.persnr ORDER BY s.boundary_date) AS prev_persnr_alt,
            LAG(s.`name`) OVER (PARTITION BY s.persnr ORDER BY s.boundary_date) AS prev_name,
            LAG(s.pdl) OVER (PARTITION BY s.persnr ORDER BY s.boundary_date) AS prev_pdl,
            LAG(s.oe) OVER (PARTITION BY s.persnr ORDER BY s.boundary_date) AS prev_oe,
@@ -498,6 +684,7 @@ SQL SECURITY DEFINER BEGIN
                    l.segment_end,
                    CASE
                      WHEN l.prev_segment_end = DATE_SUB(l.boundary_date, INTERVAL 1 DAY)
+                      AND s.persnr_alt    <=> l.prev_persnr_alt
                       AND s.`name`        <=> l.prev_name
                       AND s.pdl           <=> l.prev_pdl
                       AND s.oe            <=> l.prev_oe

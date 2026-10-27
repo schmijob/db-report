@@ -3,6 +3,7 @@
 -- of the employment dates beginn and ende.
 CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd` (
   `persnr` int(13) NOT NULL,
+  `persnr_alt` int(13) DEFAULT NULL,
   `name` varchar(255) DEFAULT NULL,
   `pdl` varchar(50) DEFAULT NULL,
   `oe` varchar(50) DEFAULT NULL,
@@ -21,5 +22,5 @@ CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd` (
   `gueltig_von` date NOT NULL,
   `gueltig_bis` date NOT NULL,
   PRIMARY KEY (`persnr`,`gueltig_von`),
-  KEY `ix_personalakte_scd_person_date` (`persnr`,`gueltig_von`,`gueltig_bis`)
+  KEY `ix_personalakte_scd_alt_date` (`persnr_alt`,`gueltig_von`,`gueltig_bis`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

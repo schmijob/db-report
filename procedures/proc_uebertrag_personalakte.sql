@@ -174,7 +174,7 @@ SQL SECURITY DEFINER BEGIN
 		     , filedate
 		     , NOW() AS last_insert_update
 		  FROM (
-		        SELECT p.persnr
+		        SELECT p.persnr_alt
 		             , d.datum
 		             , d.arbeitstag
 		             , p.taetigkeit
@@ -204,12 +204,12 @@ SQL SECURITY DEFINER BEGIN
 		-- ZAK Probezeitverlängerung
 		INSERT INTO tbl_ueb_fz_join (persnr, datum, pa_fz, pa_filedate)
 		
-		SELECT s.persnr
+		SELECT s.persnr_alt
 		     , d.datum
 		     , IF(d.arbeitstag = 1, '*', '')
 		     , p.filedate
 		  FROM tbl_ueb_personalakte_scd s
-		  JOIN tmp_personalakte_import p ON p.pers_nr = s.persnr
+			JOIN tmp_personalakte_import p ON p.pers_nr = s.persnr_alt
 		  JOIN tbl_datum d ON d.datum BETWEEN NULLIF(p.ende_besch, '9999-12-31') + INTERVAL 1 DAY
 		                                  AND s.ende
 		                  AND d.datum BETWEEN s.gueltig_von AND s.gueltig_bis
@@ -230,7 +230,7 @@ SQL SECURITY DEFINER BEGIN
 		UPDATE tbl_ueb_fz_join j
 		
 		LEFT JOIN (
-		    SELECT p.persnr
+		    SELECT p.persnr_alt
 		         , d.datum
 		      FROM tbl_ueb_personalakte_scd p
 		      JOIN tbl_datum d
@@ -238,7 +238,7 @@ SQL SECURITY DEFINER BEGIN
 		       AND d.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 		     WHERE d.datum >= CURDATE() - INTERVAL 60 DAY
 		) p
-		       ON p.persnr = j.persnr
+	       ON p.persnr_alt = j.persnr
 		      AND p.datum  = j.datum
 		
 		SET
@@ -250,7 +250,7 @@ SQL SECURITY DEFINER BEGIN
           , j.last_insert_update = NOW()
 		
 		WHERE j.datum >= CURDATE() - INTERVAL 60 DAY
-		  AND p.persnr IS NULL
+		  AND p.persnr_alt IS NULL
 		  AND j.pa_filedate IS NOT NULL
 		  AND j.pa_fz <> 'XXX'
 		;

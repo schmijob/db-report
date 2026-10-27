@@ -35,11 +35,11 @@ SQL SECURITY DEFINER BEGIN
 				WHERE d.datum BETWEEN @mindate AND @maxdate AND s.uebernahme_am >= CURDATE()
 		UNION DISTINCT 
 				SELECT 
-					s.persnr, d.datum, IF(d.arbeitstag = 1 , '*' , '') AS abwesenheitsgrund, NULL, p.filedate
+					 s.persnr_alt, d.datum, IF(d.arbeitstag = 1 , '*' , '') AS abwesenheitsgrund, NULL, p.filedate
 				FROM 
 					tbl_ueb_personalakte_scd s 															-- Virtuelle Urlaubsvorschau für ZAK nach 3 Monaten Probezeit
 				LEFT JOIN 
-					tbl_import_personalakte p ON p.pers_nr = s.persnr
+					 tbl_import_personalakte p ON p.pers_nr = s.persnr_alt
 				LEFT JOIN 
 					tbl_datum d ON d.datum BETWEEN NULLIF(p.ende_besch, '9999-12-31') + INTERVAL 1 day AND s.ende
 					           AND d.datum BETWEEN s.gueltig_von AND s.gueltig_bis
@@ -47,14 +47,14 @@ SQL SECURITY DEFINER BEGIN
 					d.datum BETWEEN @mindate AND @maxdate AND p.ende_besch > CURDATE()
 		UNION DISTINCT
 				SELECT 
-					s.persnr, d.datum, IF(d.arbeitstag = 1 , '*' , '') AS abwesenheitsgrund, NULL, s.filedate
+					 s.persnr_alt, d.datum, IF(d.arbeitstag = 1 , '*' , '') AS abwesenheitsgrund, NULL, s.filedate
 				FROM 
 					tbl_ueb_personalakte_scd s 															-- Virtuelle Urlaubsvorschau für neu angelegte MA
 				LEFT JOIN 
-					tbl_ueb_fz_personalkalender u ON u.persnr = s.persnr
-				LEFT JOIN 
-					tbl_datum d ON d.datum BETWEEN s.beginn AND s.ende
+					 tbl_datum d ON d.datum BETWEEN s.beginn AND s.ende
 					           AND d.datum BETWEEN s.gueltig_von AND s.gueltig_bis
+				 LEFT JOIN
+				 tbl_ueb_fz_personalkalender u ON u.persnr = s.persnr_alt AND u.datum = d.datum
 				WHERE 
 					u.datum IS NULL AND d.datum BETWEEN @mindate AND @maxdate AND s.ende > CURDATE() -- AND s.pdl IS NULL				
 		),
@@ -92,7 +92,7 @@ SQL SECURITY DEFINER BEGIN
 		FROM 
 			fehlzeiten f
 		LEFT JOIN 
-		    tbl_ueb_personalakte_scd p ON f.persnr = p.persnr
+		    tbl_ueb_personalakte_scd p ON f.persnr = p.persnr_alt
 		                          AND f.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 		LEFT JOIN
 			tbl_stamm_persnr sp ON sp.persnr = p.persnr

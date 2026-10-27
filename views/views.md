@@ -10,7 +10,9 @@ these SQL files and the personalakte migration.
   table.
 - `vp_personal_u` exposes its normalized current-personnel column projection.
 - Internal consumers that evaluate historical dates use
-  `tbl_ueb_personalakte_scd` directly, with a validity-range join.
+  `tbl_ueb_personalakte_scd` directly, joining source PersNr values to
+  `persnr_alt` and the relevant date to the inclusive validity range. The
+  SCD's `persnr` is the canonical number for grouping across PersNr changes.
 
 The date-sensitive reporting views are `view_clusterung_anwesenheit`,
 `view_decay_fz`, `view_letzte_schicht`, `view_nettoanwesenheit`,

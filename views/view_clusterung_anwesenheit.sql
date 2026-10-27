@@ -12,7 +12,7 @@ with dates as (select date_format(curdate() - interval 1 month,'%Y-%m-01') AS `m
     from tbl_ueb_fz_buchungen b
     join datelist d on b.`Datum` = d.datum
     left join tbl_ueb_personalakte_scd p
-      on b.`PersNr` = p.persnr
+      on b.`PersNr` = p.persnr_alt
      and b.`Datum` between p.gueltig_von and p.gueltig_bis
     left join tbl_stamm_kategorie_abteilung k on p.taetigkeit = k.`tätigkeit`
     left join tbl_import_verschiebung v on v.datum = b.`Datum` and v.schicht = b.`Schicht`

@@ -23,7 +23,7 @@ WITH anwesenheit AS (
 		, SUM(p.oe = 'QS' AND p.taetigkeit = 'Teamleiter') AS QS_TL
 		, SUM(p.taetigkeit IN ('Schichtleiter', 'Trainingskoordinator', 'Qualifizierungskoordinator')) AS Schichtleiter
 	FROM tbl_ueb_fz_buchungen b	
-	LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
+	LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr_alt AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 	LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
 	LEFT JOIN tbl_import_verschiebung v ON v.datum = b.datum AND v.schicht = b.schicht
   WHERE b.anwesenheit = 'anw'
