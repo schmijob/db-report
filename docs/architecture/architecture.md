@@ -113,11 +113,13 @@ tbl_ueb_personalakte
 
 `vp_personal_u` is one of the most important shared dimensions in the schema.
 
-Historical exports for the Personalakte SCD are uploaded to
-`tbl_import_personalakte_scd_backfill`, kept separate from the current-only
-`tbl_import_personalakte`. `proc_ueb_personalakte_scd_backfill` replays those
-dated files into compact source snapshots and the new SCD tables. This
-preparation path does not change the current table or its consumers.
+Historical exports are uploaded to `tbl_import_personalakte_scd_backfill`, kept
+separate from the current-only `tbl_import_personalakte`.
+`proc_uebertrag_personalakte_raw_scd(1)` retains the raw fields in
+`tbl_import_personalakte_scd_raw` as compact source-state intervals and records
+all export dates in `tbl_import_personalakte_scd_dates`. This layer applies no
+Personalakte normalization or business rules, so downstream history can be
+rebuilt from the original imported values.
 
 ## Logging / Infrastructure
 
