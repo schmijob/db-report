@@ -344,6 +344,35 @@ proc_ueb_fz_buchungen
 tbl_ueb_fz_buchungen
 ```
 
+The shift-reconciliation refactor runs in parallel through:
+
+```text
+tbl_ueb_fz_join -----------+
+tbl_ueb_buchungen_2 -------+--> proc_ueb_fz_join --> tbl_ueb_fz_buchungen_v2
+tbl_ueb_buchungen ---------+
+tbl_ueb_personalakte ------+
+tbl_abwesenheitsgrund -----+
+tbl_schichten -------------+
+```
+
+`tbl_ueb_fz_buchungen_v2` is a shadow physical output with integer shift IDs
+from `tbl_schichten.schicht_int`. It preserves the legacy output during the
+parity period. `proc_ueb_fz_join` resolves expected and actual shifts at day
+grain, matches exact shifts before mismatches, then expands the day into shift
+rows. Expected and actual shift slots are temporary resolver data, not columns
+persisted in `tbl_ueb_fz_join`.
+
+The booking result keeps the existing 120-minute boundary: completed bookings
+at 120 minutes or more are `*`, and completed bookings from 1 through 119
+minutes are `*-`. An open booking today is `*!`; the short-duration admin
+exception today remains present. For `~`, a Night shift (`schicht_int = 1`)
+uses a 22:00 start on the preceding calendar date because the dictionary's
+00:00 Sollzeit is a date-boundary placeholder.
+
+The orchestrator transfers changes before rebuilding either FZ output and runs
+both output paths from the same source state. The legacy table and its
+compatibility consumers remain authoritative until parity review and cutover.
+
 For questions about actual personnel attendance, `vp_buchungen` is the more useful starting point than the raw booking import.
 
 ---

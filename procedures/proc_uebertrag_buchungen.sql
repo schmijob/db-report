@@ -137,19 +137,21 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	     , b.minuten
 	     , CASE WHEN b.minuten >= 120
 	            THEN '*' 					-- anwesend
+
+	            WHEN b.minuten BETWEEN 0 AND 119
+	             AND k.kategorie = 'admin'
+	             AND b.datum = CURDATE()
+	            THEN '*' 					-- Admins today count as present despite short booking time
 	
 	            WHEN ( b.minuten IS NULL OR b.minuten = 0 )
-	             AND TIME(b.kommen) > 0
+	             AND b.kommen IS NOT NULL
 	             AND b.datum = CURDATE()
 	            THEN '*!' 					-- eingestochen
 	
 	            WHEN b.minuten BETWEEN 1 AND 119
-				   THEN IF( k.kategorie = 'admin' AND b.datum = CURDATE()
-				          , '*!'            -- Raucherpause (Admin heute)
-				          , '*-'            -- Früher gegangen
-				          )
+			   THEN '*-' 					-- Früher gegangen
 	            
-	            ELSE '?'
+	            ELSE '*-' 					-- incomplete or invalid duration is treated as partial attendance
 	       END AS buchung_status
 	     , b.filedate
 	  FROM vp_buchungen_u b
@@ -183,14 +185,15 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	        , datum
 	
 	ON DUPLICATE KEY UPDATE
-	      bu_fz           = VALUES(bu_fz)
+	      last_insert_update = IF(    NOT (tbl_ueb_fz_join.bu_fz <=> VALUES(bu_fz))
+										 OR NOT (tbl_ueb_fz_join.bu_tp <=> VALUES(bu_tp))
+										 OR NOT (tbl_ueb_fz_join.bu_filedate <=> VALUES(bu_filedate))
+									   , VALUES(last_insert_update)
+									   , tbl_ueb_fz_join.last_insert_update
+									   )
+	    , bu_fz           = VALUES(bu_fz)
 	    , bu_tp           = VALUES(bu_tp)
 	    , bu_filedate     = VALUES(bu_filedate)
-	    , last_insert_update = IF(    bu_fz        <> VALUES(bu_fz)
-	    								    OR bu_tp        <> VALUES(bu_tp)
-	    								  , NOW()
-										  , tbl_ueb_fz_join.last_insert_update
-										  ) 
 	;
 	
 	UPDATE tbl_ueb_fz_join j	
@@ -209,7 +212,7 @@ SELECT MAX(filedate) INTO v_filedate FROM tbl_import_buchungen_mitarbeiter;
 	WHERE j.datum BETWEEN p_mindate AND p_maxdate
 	  AND b.persnr IS NULL
 	  AND j.bu_filedate IS NOT NULL
-	  AND j.bu_fz <> 'XXX'
+	  AND (NOT (j.bu_fz <=> 'XXX') OR j.bu_tp IS NOT NULL)
 	;
 
 END//

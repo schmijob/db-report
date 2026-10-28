@@ -75,14 +75,14 @@ SELECT persnr
 	 WHERE p.datum BETWEEN @mindate AND @maxdate
 	
 	ON DUPLICATE KEY UPDATE
-	      pk_fz       = VALUES(pk_fz)
+	      last_insert_update = IF(    NOT (tbl_ueb_fz_join.pk_fz <=> VALUES(pk_fz))
+										 OR NOT (tbl_ueb_fz_join.pk_tp <=> VALUES(pk_tp))
+									   , VALUES(last_insert_update)
+									   , tbl_ueb_fz_join.last_insert_update
+									   )
+	    , pk_fz       = VALUES(pk_fz)
 	    , pk_tp       = VALUES(pk_tp)
 	    , pk_filedate = VALUES(pk_filedate)
-	    , last_insert_update = IF(    pk_fz        <> VALUES(pk_fz)
-	    								    OR pk_tp        <> VALUES(pk_tp)
-	    								  , NOW()
-										  , tbl_ueb_fz_join.last_insert_update
-										  )
 	;
 
 	UPDATE tbl_ueb_fz_join j
@@ -95,7 +95,7 @@ SELECT persnr
 	WHERE j.datum BETWEEN @mindate AND @maxdate
 	  AND p.persnr IS NULL
 	  AND j.pk_filedate IS NOT NULL
-	  AND j.pk_fz <> 'XXX' 
+	  AND (NOT (j.pk_fz <=> 'XXX') OR j.pk_tp IS NOT NULL)
 	;
 
 
