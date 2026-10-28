@@ -80,9 +80,8 @@ HEADER_TO_COLUMN = {
     "geb datum": "gebdatum",
 }
 
-# PersNr is needed to locate the source column; its values may be blank. Every
-# other report field may be absent and will be emitted as SQL NULL.
-REQUIRED_HEADERS = {"pers_nr"}
+# Each source field may be absent. At least one recognized label is needed to
+# identify the header row; without a PersNr column, source rows are skipped.
 
 DATE_COLUMNS = {
     "beginn_besch",
@@ -141,7 +140,7 @@ def find_header(rows: list[list[str]]) -> tuple[int, dict[str, int]] | None:
                     f"header row {row_index + 1}: multiple columns map to {mapped}"
                 )
             found[mapped] = column_index
-        if REQUIRED_HEADERS.issubset(found):
+        if found:
             return row_index, found
     return None
 
@@ -174,7 +173,7 @@ def load_rows_and_header(
         candidates.append((score, rows, header_index, header_indices, delimiter))
 
     if not candidates:
-        raise ReportError(f"{path.name}: couldn't find a report header containing PersNr")
+        raise ReportError(f"{path.name}: couldn't find a report header with recognized field labels")
     candidates.sort(key=lambda item: item[0], reverse=True)
     _, rows, header_index, header_indices, delimiter = candidates[0]
     return rows, header_index, header_indices, delimiter
@@ -266,7 +265,7 @@ def normalized_data_rows(
     if lastinsertupdate is None:
         lastinsertupdate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     width = len(report.rows[report.header_index])
-    person_index = report.header_indices["pers_nr"]
+    person_index = report.header_indices.get("pers_nr")
     seen: set[int] = set()
     normalized_rows: list[list[str | int | None]] = []
     source_row_count = 0
@@ -288,7 +287,11 @@ def normalized_data_rows(
             # cells are padded, never shifted into a different field.
             row = row + [""] * (width - len(row))
 
-        person_number = parse_person_number(row[person_index], path, row_index + 1)
+        person_number = (
+            parse_person_number(row[person_index], path, row_index + 1)
+            if person_index is not None
+            else None
+        )
         if person_number is None:
             skipped_null_persnr += 1
             continue

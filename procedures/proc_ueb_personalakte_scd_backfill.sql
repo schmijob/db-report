@@ -181,11 +181,17 @@ SQL SECURITY DEFINER BEGIN
         UPDATE tbl_ueb_personalakte_scd_snapshot s
         JOIN tmp_pa_scd_backfill_current c
           ON c.persnr = s.persnr
+        JOIN tmp_pa_scd_backfill_import i
+          ON i.pers_nr = c.persnr
+         AND i.ende_besch IS NOT NULL
+         AND i.ende_besch <> '2022-07-31'
+         AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
            SET s.gueltig_bis = DATE_SUB(var_snapshot_date, INTERVAL 1 DAY)
          WHERE s.gueltig_bis = '9999-12-31'
            AND s.gueltig_von < var_snapshot_date
            AND NOT (
                   s.`name`        <=> c.`name`
+              AND (i.gebdatum IS NULL OR i.gebdatum = '0000-00-00' OR s.gebdatum <=> i.gebdatum)
               AND s.pdl           <=> c.pdl
               AND s.oe            <=> c.oe
               AND s.schichtgruppe <=> c.schichtgruppe
@@ -226,6 +232,7 @@ SQL SECURITY DEFINER BEGIN
              , s.filedate = c.filedate
          WHERE s.gueltig_bis = '9999-12-31'
            AND s.gueltig_von <= var_snapshot_date
+           AND (i.gebdatum IS NULL OR i.gebdatum = '0000-00-00' OR s.gebdatum <=> i.gebdatum)
            AND s.`name`        <=> c.`name`
            AND s.pdl           <=> c.pdl
            AND s.oe            <=> c.oe
