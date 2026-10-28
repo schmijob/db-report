@@ -75,9 +75,10 @@ THEN
 		CALL schreibe_log("proc_00_personalplanung", CONCAT("urlaub", @mindate2, " - ", @maxdate2), 0);
 	END IF;
 		-- Zeitraum bei Aktualisierung Personalakte
-	IF EXISTS (SELECT 1 FROM tbl_ueb_personalakte p 
+	IF EXISTS (SELECT 1 FROM tbl_ueb_personalakte_scd p
 		        WHERE p.beginn > CURDATE() - INTERVAL 3 DAY
 		          AND p.ende >= CURDATE()
+		          AND CURDATE() BETWEEN p.gueltig_von AND p.gueltig_bis
 				    AND NOT EXISTS (SELECT 1 FROM tbl_ueb_fz_buchungen b WHERE b.PersNr = p.persnr AND b.datum > CURDATE())
 				  ) THEN
 		SET @mindate2 = LEAST(IFNULL(@mindate2, CURDATE()), CURDATE() - INTERVAL 3 DAY);

@@ -51,3 +51,33 @@ for fixture-runner behavior and
 `../db-workbench/docs/skills/using-db-workbench.md` for shared
 procedure-development steps. The agent-to-human handoff is defined in this
 repository's `AGENTS.md`.
+
+## Personalakte SCD
+
+Build raw import history first with `proc_uebertrag_personalakte_raw_scd(1)`.
+It stores untransformed source values in compact raw-state intervals and keeps
+each Druckdatum in `tbl_import_personalakte_scd_dates`.
+
+`proc_uebertrag_personalakte_transform_snapshot` contains the shared
+normalization and business rules. `proc_uebertrag_personalakte` calls it for
+the current import; `proc_ueb_personalakte_scd_backfill()` calls it for every
+date in raw history, oldest to newest. The backfill procedure only builds the
+normalized snapshot intervals and serving SCD from the transform output. It
+does not copy the normalization rules or write the historical rows into the
+current materialized Personalakte table.
+
+For each current file, `proc_uebertrag_personalakte` records the raw import,
+uses the shared transform, updates `tbl_ueb_personalakte` and the normalized
+snapshot intervals, then calls `proc_ueb_personalakte_scd_reconcile()`.
+`proc_uebertrag_aenderungen` also rebuilds the SCD after refreshing the change
+log. The raw import SCD remains available to rebuild normalized history if
+these business rules change.
+
+The SCD uses canonical `persnr` across resolved PersNr changes and stores the
+source number active in each interval as `persnr_alt`. Reconciliation uses
+change history as the authority for field values and snapshots as fallback
+evidence when the two disagree. It applies a unique adjacent-snapshot PersNr
+handoff when the old number disappears and the new number begins with the same
+name, subject to available birthday consistency, and records the evidence for
+HR review. Date-sensitive facts join by `persnr_alt` and their event date;
+canonical person reporting groups by `persnr`.

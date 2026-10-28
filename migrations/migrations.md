@@ -1,4 +1,4 @@
-# Database migrations
+﻿# Database migrations
 
 Versioned database migrations belong here when a schema change needs an ordered
 upgrade or rollback step. Keep deployment tooling in `db-workbench`.
@@ -33,3 +33,11 @@ export-date tables; it does not run any Personalakte business transformations
 or write to existing tables. Keep the staging rows until the raw history has
 been reviewed and copied to sanitized LOCAL. The downstream normalized SCD
 rebuild belongs to the separate cutover change.
+
+## `20261029_personalakte_scd.sql`
+
+Creates the normalized serving SCD, normalized snapshot fallback, and
+reconciliation evidence tables. It does not create or rewrite the raw import
+history objects from `20261028_personalakte_raw_history.sql`. The cutover
+procedures normalize the durable raw history and maintain the current transfer
+from the same transformation worker.

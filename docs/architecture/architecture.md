@@ -87,6 +87,7 @@ These objects occur across domains and should not automatically be classified as
 
 - `tbl_import_personalakte`
 - `tbl_uebertrag_personalakte` # depreceated
+- `tbl_ueb_personalakte_scd`
 - `tbl_ueb_personalakte`
 - `tbl_stamm_OE_translate`
 - `tbl_stamm_taetigkeit_translate`
@@ -101,25 +102,86 @@ tbl_import_personalakte
         v
 proc_uebertrag_personalakte
         |
-        v
-tbl_ueb_personalakte
+        +-> proc_uebertrag_personalakte_raw_scd(0)
+        +-> proc_uebertrag_personalakte_transform_snapshot(current)
+                 |
+                 +-> tbl_ueb_personalakte (materialized current row per person)
+                 |       +-> vp_personal_u (current-personnel view)
+                 |       +-> external consumers
+                 +-> tbl_ueb_personalakte_scd_snapshot
+                         |
+                         v
+               proc_ueb_personalakte_scd_reconcile
+                         |
+                         +-> tbl_ueb_personalakte_scd
+                                 +-> date-sensitive internal consumers
+
+tbl_import_personalakte_scd_backfill (historical replay only)
         |
-        +-> vp_personal_u
-        +-> Personalplanung
-        +-> Nettoanwesenheit
-        +-> CAPS
-        +-> assorted reporting
+        v
+proc_uebertrag_personalakte_raw_scd(1)
+        |
+        +-> tbl_import_personalakte_scd_raw + tbl_import_personalakte_scd_dates
+                 |
+                 v
+proc_ueb_personalakte_scd_backfill
+        |
+        +-> proc_uebertrag_personalakte_transform_snapshot(history)
+                 |
+                 +-> tbl_ueb_personalakte_scd_snapshot
+
+tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
 ```
 
-`vp_personal_u` is one of the most important shared dimensions in the schema.
+`tbl_ueb_personalakte_scd.persnr` is the canonical person number, resolved to
+the latest number in the recorded PersNr-change chain. `persnr_alt` is the
+source PersNr active during that row's validity interval. It changes as a
+normal SCD field, including at the effective date recorded by the change log.
+The key remains `(persnr, gueltig_von)`. Join historical facts by their source
+PersNr to `persnr_alt` and the fact's date within the validity interval; use
+`persnr` to group rows for the same person across PersNr changes. The alias/date
+index supports that historical lookup.
+
+`gueltig_von` and `gueltig_bis` are inclusive validity dates for the complete
+normalized row. They are separate from employment dates `beginn` and `ende`.
+The snapshot baseline retains only changed states, not one row per person per
+day. For each effective date and field, the latest
+`aenderungsdatum` in `tbl_uebertrag_aenderungen_werte` is authoritative, so
+retroactive changes can revise earlier intervals. If equally recent change
+rows disagree, a date cannot be parsed, or a change already present by the
+snapshot's `filedate` disagrees with that snapshot, the reconciler uses the
+snapshot value for that field and records the conflict in
+`tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive change
+is resolved in favor of the change log.
+
+Some PersNr-change rows in `tbl_uebertrag_aenderungen_werte` contain the old
+number in `wert`, but retroactive exports can put the new number in both
+`wert` and `persnr`. Reconciliation also looks for a unique handoff between
+adjacent raw snapshots: the old number disappears, the new number begins, and
+the normalized names match. A unique match is applied when the old number is
+absent from current personalakte; a birthday mismatch prevents automatic
+mapping when both snapshots have a birthday. The candidate uses the snapshot
+boundary and any matching `gueltig_von` change event to set the alias timeline.
+Applied candidates and their snapshot/change-log evidence are written to the
+reconciliation table for HR review. Evidence includes name-bearing rows from
+`tbl_uebertrag_aenderungen` and effective-date events from
+`tbl_uebertrag_aenderungen_werte`. Ambiguous candidates, old numbers still
+present in current personalakte, and birthday conflicts are logged without
+merging. Overlapping source snapshots for linked numbers
+hand off at the first new-number snapshot. Any other overlapping canonical
+intervals stop reconciliation for inspection. `tbl_ueb_personalakte` remains
+the materialized one-row-per-person current projection. `vp_personal_u` exposes
+the normalized current-state view. Internal date-sensitive queries should use
+`tbl_ueb_personalakte_scd`.
 
 Historical exports are uploaded to `tbl_import_personalakte_scd_backfill`, kept
 separate from the current-only `tbl_import_personalakte`.
 `proc_uebertrag_personalakte_raw_scd(1)` retains the raw fields in
 `tbl_import_personalakte_scd_raw` as compact source-state intervals and records
 all export dates in `tbl_import_personalakte_scd_dates`. This layer applies no
-Personalakte normalization or business rules, so downstream history can be
-rebuilt from the original imported values.
+Personalakte normalization or business rules. Both current and historical
+paths use `proc_uebertrag_personalakte_transform_snapshot`, so a change to the
+business rules can be replayed against the retained raw source history.
 
 ## Logging / Infrastructure
 
@@ -217,16 +279,27 @@ tbl_uebertrag_aenderungen
 tbl_uebertrag_aenderungen_beginn_ende
         |
         v
-tbl_ueb_personalakte
+proc_uebertrag_personalakte_transform_snapshot
+        |
+        +-> tbl_ueb_personalakte_scd_snapshot
+                   |
+tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
+                   |
+                   +-> tbl_ueb_personalakte_scd
+                           +-> dated Personalplanung / attendance / PEKO consumers
+
+tbl_ueb_personalakte -> vp_personal_u
 ```
+
+The transfer procedure invokes the shared transform once for the current
+import. Historical rebuild invokes that same transform for each export date
+reconstructed from `tbl_import_personalakte_scd_raw` and
+`tbl_import_personalakte_scd_dates`.
 
 Common access view:
 
-```text
-vp_personal_u
-    |
-    +-> tbl_ueb_personalakte
-```
+`tbl_ueb_personalakte` remains the current-state materialized table. Do not use
+it for date-sensitive analysis.
 Mapping taetigkeit to categories:
 `tbl_stamm_kategorie_abteilung`
 
@@ -526,7 +599,7 @@ tbl_stamm_kategorie_abteilung
 tbl_uebertrag_fanf
 tbl_ueb_aend_fz_kalender
 tbl_ueb_fz_buchungen
-tbl_ueb_personalakte
+tbl_ueb_personalakte_scd
 ```
 
 Intermediate tables:
@@ -555,7 +628,7 @@ Conceptually:
 tbl_uebertrag_fanf -----------+
 tbl_ueb_fz_buchungen ---------+
 tbl_ueb_fz_forecast ----------+
-tbl_ueb_personalakte ---------+--> proc_ueb_fz_personalplanung
+tbl_ueb_personalakte_scd -----+--> proc_ueb_fz_personalplanung
 tbl_ueb_fluktuation_person ---+             |
 tbl_ueb_fz_persfaktor --------+             v
                                   tbl_ueb_fz_personalplanung
@@ -847,7 +920,7 @@ view_ausgangsrechnung_ako_wochenwerte
 ```text
 tbl_import_buchungen_mitarbeiter --+
 tbl_ueb_fz_buchungen --------------+
-tbl_ueb_personalakte ---------------+--> view_nettoanwesenheit
+tbl_ueb_personalakte_scd -----------+--> view_nettoanwesenheit
 tbl_abwesenheitsgrund --------------+
 tbl_stamm_kategorie_abteilung ------+
 ```
@@ -923,7 +996,8 @@ When investigating business logic, these are useful entry points.
 
 ```text
 vp_personal_i -> import personnel
-vp_personal_u -> transformed personnel
+vp_personal_u -> current transformed personnel (compatibility)
+tbl_ueb_personalakte_scd -> date-sensitive transformed personnel
 ```
 
 ## Bookings
@@ -1027,7 +1101,7 @@ tbl_import_* source
 ```text
 PERSONALPLANUNG
 
-personalakte -----------------> tbl_ueb_personalakte -----------+
+personalakte -----------------> tbl_ueb_personalakte_scd --------+
                                                                |
 buchungen -> uebertrag -> tbl_ueb_buchungen -> fz_buchungen ---+
                                                                |
