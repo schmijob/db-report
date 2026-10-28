@@ -4,16 +4,9 @@ DROP PROCEDURE IF EXISTS `proc_uebertrag_personalakte`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte`()
 SQL SECURITY DEFINER BEGIN
     DECLARE var_filedate DATETIME;
-    DECLARE var_maxdate DATE;
-
-    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
-    CREATE TEMPORARY TABLE tmp_personalakte_import LIKE tbl_import_personalakte;
-    INSERT INTO tmp_personalakte_import
-    SELECT * FROM tbl_import_personalakte;
     
     -- Prüfung, ob neue Änderungen vorhanden sind
-    SELECT MAX(filedate) INTO var_filedate FROM tmp_personalakte_import imp;
-    SELECT MAX(datum) INTO var_maxdate FROM tbl_datum;
+    SELECT MAX(filedate) INTO var_filedate FROM tbl_import_personalakte imp;
     
 	 IF var_filedate IS NOT NULL
 	    AND NOT EXISTS (
@@ -21,94 +14,32 @@ SQL SECURITY DEFINER BEGIN
 	          FROM tbl_ueb_personalakte ueb
 	         WHERE ueb.filedate = var_filedate
 	    ) THEN
-	 	-- Personalakte übertragen
-		INSERT INTO tbl_ueb_personalakte (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
-		
-		-- In Zeus gelöschte MA (=kein Enddatum) rausfiltern
-		WITH personalakte AS (
-		    SELECT p.pers_nr
-				 , REGEXP_REPLACE(p.name_vorname, '^[0-9]{2}\.[0-9]{2}\.[0-9]{2} ', '') AS name_vorname
-				 , p.zeitarbeitsfirma
-				 , TRIM(BOTH ' ' FROM TRIM(BOTH '\r\n' from p.oe_der_person)) AS oe_der_person
-				 , p.schicht
-				 , COALESCE(NULLIF(p.info,  ''), IF(p.pers_nr < 95000, 'ZAK', 'DPW')) AS info
-				 , p.beginn_besch -- COALESCE(b.beginn, p.beginn_besch) AS beginn_besch
-				 , TRIM(BOTH ' ' FROM TRIM(BOTH '\r\n' from p.taetigkeit)) AS taetigkeit
-				 , CASE WHEN p.team IN ('8', '9', '10') THEN '' ELSE TRIM(BOTH ' ' FROM TRIM(BOTH '\r\n' from p.team)) END AS team
-				 , p.betriebsrat
-				 , p.filedate 
-			    		   -- Bei ZAK verlängere 3 Monate 'Probezeit'-Befristung auf 15 Monate 
-				   , CASE WHEN p.info = 'ZAK' AND p.ende_besch > DATE(var_filedate) AND p.ende_besch BETWEEN p.beginn_besch + INTERVAL 80 DAY AND p.beginn_besch + INTERVAL 100 DAY
-			    		  THEN p.beginn_besch + INTERVAL 15 MONTH
-			    		  ELSE p.ende_besch -- COALESCE(b.ende, p.ende_besch) 
-					END AS ende_besch
-				 , p.taetigkeit2
-				 , p.funktion
-			 FROM tmp_personalakte_import p
-		--	 LEFT JOIN tbl_uebertrag_aenderungen_beginn_ende b ON p.pers_nr = b.persnr
-			 WHERE p.ende_besch IS NOT NULL AND p.ende_besch <> '2022-07-31'
-		    AND beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
-		      
+		-- Preserve source values, then apply the shared Personalakte normalization.
+		CALL proc_uebertrag_personalakte_raw_scd(0);
+		CALL proc_uebertrag_personalakte_transform_snapshot(DATE(var_filedate), 0);
+
+		INSERT INTO tbl_ueb_personalakte (
+		      persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
+		    , taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate
 		)
-		-- Bereinige Personalakte und suche übernommene ZAK (neuer Eintrag mit gleichem Namen)
-		SELECT p1.pers_nr AS persnr 
-			, p1.name_vorname AS `name` 
-			, p1.zeitarbeitsfirma AS pdl 
-			, CASE WHEN p1.betriebsrat = 'Freigestellt' THEN 'Freigestellter BR'																		-- OE der Person:
-					 WHEN p1.team LIKE '%BGL%' THEN 'BGL'						-- 'BGL' aus Team
-					 WHEN p1.oe_der_person = 'alle ausgeschiedenen MAInnen' AND p1.team REGEXP '^[A-Z]-[A-Z]+-[0-9]+$'
-					      THEN REGEXP_REPLACE(p1.team, '^[A-Z]-([A-Z]+)(?:-[0-9]+)?$', '\1')
-					 WHEN p1.oe_der_person = 'alle ausgeschiedenen MAInnen' THEN ''
-					 ELSE COALESCE(pt.oe, ot.OE_neu, p1.oe_der_person) 		-- OE aus tbl_stamm_persnr (persönliche Ersetzungstabelle), tbl_stamm_OE_translate (OE-Ersetzungstabelle) oder original
-			  END AS OE 
-			, p1.schicht AS schichtgruppe 
-			, p1.info AS eg 														-- Endgeltgruppe
-			, p1.beginn_besch AS beginn 
-			, CASE WHEN DATE(coalesce(pt.ende, p1.ende_besch)) > var_maxdate THEN DATE(coalesce(pt.ende, p1.ende_besch))							-- nach 2025: Ende Beschäftigung aus tbl_stamm_persnr oder Original
-					 ELSE (SELECT MAX(d.datum) FROM tbl_datum d WHERE d.arbeitstag = 1 AND DATE(d.datum) <= DATE(coalesce(pt.ende, p1.ende_besch)))  -- ersetzt Ende Beschäftigung durch letzten gültigen Arbeitstag
-			  END AS ende
-			, CASE WHEN p1.betriebsrat = 'Freigestellt' THEN 'Freigestellter BR'                             -- BR
-					 WHEN p1.pers_nr BETWEEN 7000 AND 7999 THEN 'Pausenvertretung'  											-- Pausenvertretung
-					 WHEN ot.OE_neu = 'QS' AND coalesce(tt.taetigkeit_neu, p1.taetigkeit) = 'Lagerhelfer' then 'QS' -- QS-Mitarbeiter
-					 ELSE COALESCE(pt.taetigkeit, tt.taetigkeit_neu, p1.taetigkeit) 											-- Tätigkeit aus persönlicher Ersetzungstabelle, Tätigkeit-Übersetzungstabelle oder Original
-			  END AS Tätigkeit 
-			, p1.team AS Team
-			, p1.betriebsrat AS BR
-			, MAX(CASE WHEN p2.beginn_besch - INTERVAL 60 day BETWEEN p1.ende_besch   - INTERVAL 60 DAY AND p1.ende_besch   THEN 1		-- ZAK, der übernommen wurde (keine Fluktuation)
-					     WHEN p2.ende_besch                     BETWEEN p1.beginn_besch - INTERVAL 60 DAY AND p1.beginn_besch THEN 2 							-- fester MA, der vorher ZAK war (kein Onboarding)
-					     ELSE 0 																																		-- keine Übernahme
-		  	  END) AS Übernahme	
-			, p1.taetigkeit2
-			, p1.funktion																														-- hier wird das Original-Enddatum genommen
-			, p1.filedate
-						 
-		FROM personalakte p1 
-		LEFT JOIN tbl_stamm_OE_translate ot ON p1.oe_der_person = ot.OE_alt  								-- Übersetzungstabelle für OE der Person
-		LEFT JOIN tbl_stamm_taetigkeit_translate tt ON p1.taetigkeit = tt.taetigkeit_alt 				-- Übersetzungstabelle für Tätigkeit
-		LEFT JOIN tbl_stamm_persnr pt ON p1.pers_nr = pt.persnr 												-- Ersetzungen für Einzelpersonen
-		LEFT JOIN personalakte p2																						-- Sucht nach Übernahmen über Name + 1. Vorname
-			ON   CONCAT(SUBSTRING_INDEX(p1.name_vorname, ', ', 1), ', ', SUBSTRING_INDEX(SUBSTRING_INDEX(p1.name_vorname, ', ', -1), ' ', 1)) 
-			   = CONCAT(SUBSTRING_INDEX(p2.name_vorname, ', ', 1), ', ', SUBSTRING_INDEX(SUBSTRING_INDEX(p2.name_vorname, ', ', -1), ' ', 1))
-			AND p1.pers_nr <> p2.pers_nr
-		GROUP BY p1.pers_nr
-		ON DUPLICATE KEY 
-		UPDATE `name` = VALUES(`name`)
-			  , pdl = VALUES(pdl)
-			  , oe = IF(VALUES(oe) = '', oe, VALUES(oe))
-			  , schichtgruppe = VALUES(schichtgruppe)
-			  , eg = VALUES(eg)
-			  , beginn = VALUES(beginn)
-			  , ende = VALUES(ende)
-			  , taetigkeit = VALUES(taetigkeit)
-			  , team = VALUES(team)
-			  , br = VALUES(br)
-			  , übernahme = VALUES(übernahme)
-			  , taetigkeit2 = VALUES(taetigkeit2)
-			  , funktion = VALUES(funktion)
-			  , filedate = VALUES(filedate)
-
-		;
-
+		SELECT persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
+		     , taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate
+		  FROM tmp_personalakte_normalized
+		ON DUPLICATE KEY UPDATE
+		      `name` = VALUES(`name`)
+		    , pdl = VALUES(pdl)
+		    , oe = VALUES(oe)
+		    , schichtgruppe = VALUES(schichtgruppe)
+		    , eg = VALUES(eg)
+		    , beginn = VALUES(beginn)
+		    , ende = VALUES(ende)
+		    , taetigkeit = VALUES(taetigkeit)
+		    , team = VALUES(team)
+		    , br = VALUES(br)
+		    , übernahme = VALUES(übernahme)
+		    , taetigkeit2 = VALUES(taetigkeit2)
+		    , funktion = VALUES(funktion)
+		    , filedate = VALUES(filedate);
 		-- Compact current source snapshots without writing to the backfill table.
 		UPDATE tbl_ueb_personalakte_scd_snapshot s
 		LEFT JOIN tmp_personalakte_import i
@@ -324,7 +255,7 @@ SQL SECURITY DEFINER BEGIN
 		    , j.pa_taetigkeit      = NULL
 		    , j.pa_oe              = NULL
 		    , j.pa_schichtgr       = NULL
-		    , j.pa_filedate        = v_filedate
+		    , j.pa_filedate        = var_filedate
           , j.last_insert_update = NOW()
 		
 		WHERE j.datum >= CURDATE() - INTERVAL 60 DAY
@@ -338,4 +269,5 @@ SQL SECURITY DEFINER BEGIN
 			 	
 	END IF;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_normalized;
 END//

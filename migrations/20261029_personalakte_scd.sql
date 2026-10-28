@@ -1,13 +1,5 @@
--- Additive objects for loading and preparing the Personalakte SCD.
--- Existing source, transfer, and consumer objects are intentionally untouched.
--- CTAS copies column definitions without the current-import PersNr primary key;
--- a person must be able to appear once in every dated snapshot.
-CREATE TABLE `tbl_import_personalakte_scd_backfill` AS
-SELECT * FROM `tbl_import_personalakte` WHERE 1 = 0;
-
-ALTER TABLE `tbl_import_personalakte_scd_backfill`
-  ADD KEY `ix_personalakte_scd_backfill_filedate` (`filedate`),
-  ADD KEY `ix_personalakte_scd_backfill_person_filedate` (`pers_nr`, `filedate`);
+-- Normalized SCD output rebuilt from the durable raw-import history.
+-- All objects created here are new; current tables and views are unchanged.
 
 CREATE TABLE `tbl_ueb_personalakte_scd` LIKE `tbl_ueb_personalakte`;
 

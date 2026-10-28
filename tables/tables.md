@@ -68,17 +68,18 @@ meaning and approved usage in `docs/architecture/`.
   and change-log evidence, plus ambiguous or birthday-conflicting candidates.
   Reconciliation refreshes this table whenever it rebuilds the serving SCD.
 
-## `tbl_import_personalakte_scd_backfill`
+## Raw Personalakte import history
 
-- **Grain:** source personalakte rows from historical CSV snapshots; the schema
-  matches `tbl_import_personalakte` and rows are distinguished by `filedate`.
-- **Keys:** non-unique indexes on `filedate` and `(pers_nr, filedate)` allow the
-  same person to appear in many snapshots.
-- **Use:** isolated staging input for the historical replay. Never load historic
-  rows into `tbl_import_personalakte`, which remains the latest import used by
-  other procedures. Truncate this staging table after reviewing a successful
-  backfill.
+- `tbl_import_personalakte_scd_backfill` is the isolated upload target for
+  historical source exports. Non-unique indexes allow each PersNr to appear in
+  many files; it does not replace current-only `tbl_import_personalakte`.
+- `tbl_import_personalakte_scd_raw` stores raw source fields as one row per
+  person per maximal unchanged source interval. No Personalakte translation,
+  cleanup, or business rules are applied to these values.
+- `tbl_import_personalakte_scd_dates` keeps every Druckdatum date, even when no
+  person's raw values changed. Together, these tables reconstruct a complete
+  raw import snapshot for each export date without storing one row per person
+  per day.
 
-The preparation migration and backfill procedure add new objects only. They do
-not change the current import table, current materialized Personalakte table,
-existing procedures, or views.
+The preparation migration adds only these raw-history objects. The later
+cutover migration and procedures build normalized history from this raw layer.

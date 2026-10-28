@@ -102,24 +102,33 @@ tbl_import_personalakte
         v
 proc_uebertrag_personalakte
         |
-        +-> tbl_ueb_personalakte (materialized current row per person)
-                +-> vp_personal_u (current-personnel view)
-                +-> external consumers
-        |
-        +-> tbl_ueb_personalakte_scd_snapshot (compact snapshot intervals)
-                            |
-                            v
-                 proc_ueb_personalakte_scd_reconcile
-                            |
-                            +-> tbl_ueb_personalakte_scd
-                                    +-> date-sensitive internal consumers
+        +-> proc_uebertrag_personalakte_raw_scd(0)
+        +-> proc_uebertrag_personalakte_transform_snapshot(current)
+                 |
+                 +-> tbl_ueb_personalakte (materialized current row per person)
+                 |       +-> vp_personal_u (current-personnel view)
+                 |       +-> external consumers
+                 +-> tbl_ueb_personalakte_scd_snapshot
+                         |
+                         v
+               proc_ueb_personalakte_scd_reconcile
+                         |
+                         +-> tbl_ueb_personalakte_scd
+                                 +-> date-sensitive internal consumers
 
 tbl_import_personalakte_scd_backfill (historical replay only)
         |
         v
+proc_uebertrag_personalakte_raw_scd(1)
+        |
+        +-> tbl_import_personalakte_scd_raw + tbl_import_personalakte_scd_dates
+                 |
+                 v
 proc_ueb_personalakte_scd_backfill
         |
-        +-> tbl_ueb_personalakte_scd_snapshot
+        +-> proc_uebertrag_personalakte_transform_snapshot(history)
+                 |
+                 +-> tbl_ueb_personalakte_scd_snapshot
 
 tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
 ```
@@ -165,11 +174,14 @@ the materialized one-row-per-person current projection. `vp_personal_u` exposes
 the normalized current-state view. Internal date-sensitive queries should use
 `tbl_ueb_personalakte_scd`.
 
-Historical exports for the Personalakte SCD are uploaded to
-`tbl_import_personalakte_scd_backfill`, kept separate from the current-only
-`tbl_import_personalakte`. `proc_ueb_personalakte_scd_backfill` replays those
-dated files into compact source snapshots and the new SCD tables. This
-preparation path does not change the current table or its consumers.
+Historical exports are uploaded to `tbl_import_personalakte_scd_backfill`, kept
+separate from the current-only `tbl_import_personalakte`.
+`proc_uebertrag_personalakte_raw_scd(1)` retains the raw fields in
+`tbl_import_personalakte_scd_raw` as compact source-state intervals and records
+all export dates in `tbl_import_personalakte_scd_dates`. This layer applies no
+Personalakte normalization or business rules. Both current and historical
+paths use `proc_uebertrag_personalakte_transform_snapshot`, so a change to the
+business rules can be replayed against the retained raw source history.
 
 ## Logging / Infrastructure
 
@@ -267,7 +279,7 @@ tbl_uebertrag_aenderungen
 tbl_uebertrag_aenderungen_beginn_ende
         |
         v
-proc_uebertrag_personalakte
+proc_uebertrag_personalakte_transform_snapshot
         |
         +-> tbl_ueb_personalakte_scd_snapshot
                    |
@@ -278,6 +290,11 @@ tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
 
 tbl_ueb_personalakte -> vp_personal_u
 ```
+
+The transfer procedure invokes the shared transform once for the current
+import. Historical rebuild invokes that same transform for each export date
+reconstructed from `tbl_import_personalakte_scd_raw` and
+`tbl_import_personalakte_scd_dates`.
 
 Common access view:
 

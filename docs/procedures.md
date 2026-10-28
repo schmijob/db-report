@@ -54,17 +54,24 @@ repository's `AGENTS.md`.
 
 ## Personalakte SCD
 
-`proc_ueb_personalakte_scd_backfill()` rebuilds compact snapshot intervals and
-the serving SCD from `tbl_import_personalakte_scd_backfill`. It replays every
-staged Druckdatum oldest to newest and writes only to the new SCD, snapshot, and
-reconciliation tables. The staging table remains available for review and
-repeatable rebuilds.
+Build raw import history first with `proc_uebertrag_personalakte_raw_scd(1)`.
+It stores untransformed source values in compact raw-state intervals and keeps
+each Druckdatum in `tbl_import_personalakte_scd_dates`.
 
-After cutover, `proc_uebertrag_personalakte` writes each current import into
-`tbl_ueb_personalakte` as before, updates the compact snapshot table directly,
-and calls `proc_ueb_personalakte_scd_reconcile()` to rebuild the date-sensitive
-table. `proc_uebertrag_aenderungen` also rebuilds the SCD after refreshing the
-change log.
+`proc_uebertrag_personalakte_transform_snapshot` contains the shared
+normalization and business rules. `proc_uebertrag_personalakte` calls it for
+the current import; `proc_ueb_personalakte_scd_backfill()` calls it for every
+date in raw history, oldest to newest. The backfill procedure only builds the
+normalized snapshot intervals and serving SCD from the transform output. It
+does not copy the normalization rules or write the historical rows into the
+current materialized Personalakte table.
+
+For each current file, `proc_uebertrag_personalakte` records the raw import,
+uses the shared transform, updates `tbl_ueb_personalakte` and the normalized
+snapshot intervals, then calls `proc_ueb_personalakte_scd_reconcile()`.
+`proc_uebertrag_aenderungen` also rebuilds the SCD after refreshing the change
+log. The raw import SCD remains available to rebuild normalized history if
+these business rules change.
 
 The SCD uses canonical `persnr` across resolved PersNr changes and stores the
 source number active in each interval as `persnr_alt`. Reconciliation uses
