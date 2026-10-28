@@ -10,8 +10,10 @@ meaning and approved usage in `docs/architecture/`.
 - **Key:** `(persnr, gueltig_von)`.
 - **Identity:** `persnr` is the canonical number for the person across
   recorded PersNr changes. `persnr_alt` is the source number active during
-  that interval. PersNr changes create SCD boundaries; the old-to-new links
-  come from `tbl_uebertrag_aenderungen_werte` (`wert` = old, `persnr` = new).
+  that interval. Reconciliation uses explicit old-to-new change-log links when
+  present and applies a unique adjacent-snapshot handoff with matching names
+  when the old number has left current personalakte and birthdays do not
+  conflict. It records the evidence for HR review.
 - **Validity:** `gueltig_von` and `gueltig_bis` are inclusive `DATE` bounds;
   the current version ends at `9999-12-31`. These fields describe the validity
   of the complete row and are independent of employment dates `beginn`/`ende`.
@@ -21,8 +23,9 @@ meaning and approved usage in `docs/architecture/`.
   access, and `(persnr_alt, gueltig_von, gueltig_bis)` supports historical
   source-number lookups.
 - **Source:** rebuilt from compact normalized snapshot history in
-  `tbl_ueb_personalakte_scd_snapshot` and effective-dated records in
-  `tbl_uebertrag_aenderungen_werte`.
+  `tbl_ueb_personalakte_scd_snapshot`, effective-dated records in
+  `tbl_uebertrag_aenderungen_werte`, and name evidence in
+  `tbl_uebertrag_aenderungen`.
 - **Reconciliation:** for each effective date and field, the latest
   `aenderungsdatum` wins. If equally recent change rows disagree, a date value
   cannot be parsed, or a change already known by the snapshot's `filedate`
@@ -43,20 +46,26 @@ meaning and approved usage in `docs/architecture/`.
   snapshot values. It retains fallback evidence for retroactive or conflicting
   changes without keeping every daily export.
 - **Key:** `(persnr, gueltig_von)` with inclusive validity bounds.
+- **Index:** `(gueltig_bis, persnr)` supports matching adjacent snapshot
+  intervals during identity reconciliation.
 - **Identity:** `persnr` is the raw number in that snapshot; reconciliation
   copies it to the serving SCD's `persnr_alt` before resolving canonical IDs.
+  Optional `gebdatum` is retained here as identity-candidate evidence and is
+  not exposed by the serving SCD.
 - **Use:** internal reconciliation input; reporting joins should use
   `tbl_ueb_personalakte_scd`.
 
 ## `tbl_ueb_personalakte_scd_reconciliation`
 
-- **Grain:** one snapshot fallback decision or PersNr snapshot handoff per
-  person, effective boundary, and field. `persnr_alias_handoff` records when
-  a linked new-number snapshot supersedes a still-present old-number row.
+- **Grain:** one snapshot fallback decision, identity candidate, or PersNr
+  snapshot handoff per person, effective boundary, and field.
+  `persnr_alias_handoff` records when a linked new-number snapshot supersedes
+  a still-present old-number row.
 - **Use:** inspect fields where equally recent change rows disagree, a change
   date is invalid, or a change known at snapshot time disagrees with the
-  snapshot. Reconciliation refreshes this table whenever it rebuilds the
-  serving SCD.
+  snapshot. It also records applied PersNr identity candidates with snapshot
+  and change-log evidence, plus ambiguous or birthday-conflicting candidates.
+  Reconciliation refreshes this table whenever it rebuilds the serving SCD.
 
 ## `tbl_import_personalakte_scd_backfill`
 

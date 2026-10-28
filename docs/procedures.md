@@ -57,12 +57,19 @@ intervals by calling `proc_ueb_personalakte_scd_snapshot_sync` and, outside
 backfill, rebuilds the serving SCD by calling
 `proc_ueb_personalakte_scd_reconcile`.
 The SCD keeps `persnr` as the canonical person key and stores the source number
-valid during each interval in `persnr_alt`. PersNr-change rows resolve old
-`wert` to new `persnr`; snapshots and effective dates determine when the alias
-changes. Date-sensitive fact joins use `persnr_alt` plus the fact date, while
-grouping by canonical person uses `persnr`. If a linked old-number snapshot
-continues after the new number appears, reconciliation closes it at that
-handoff and records `persnr_alias_handoff` for review.
+valid during each interval in `persnr_alt`. Reconciliation uses direct
+old-to-new log links when present. It also applies a unique adjacent-snapshot
+candidate when the old number disappears as the new number begins with the same
+name and the old number is absent from current personalakte; a known birthday
+mismatch blocks automatic mapping. The candidate's snapshot and change-log
+evidence from `tbl_uebertrag_aenderungen` and
+`tbl_uebertrag_aenderungen_werte` is recorded for HR review. Snapshot
+boundaries and effective `gueltig_von` dates determine when `persnr_alt`
+changes.
+Date-sensitive fact joins use `persnr_alt` plus the fact date, while grouping
+by canonical person uses `persnr`. If a linked old-number snapshot continues
+after the new number appears, reconciliation closes it at that handoff and
+records `persnr_alias_handoff` for review.
 The reconciler takes the latest `aenderungsdatum` for each effective date and
 field. If equally recent records disagree, a date value is invalid, or a
 change already present by the snapshot's `filedate` disagrees with that

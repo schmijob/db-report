@@ -1,6 +1,7 @@
 -- Compact raw-number snapshots retained as fallback evidence for the SCD.
 CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd_snapshot` (
   `persnr` int(13) NOT NULL,
+  `gebdatum` date DEFAULT NULL,
   `name` varchar(255) DEFAULT NULL,
   `pdl` varchar(50) DEFAULT NULL,
   `oe` varchar(50) DEFAULT NULL,
@@ -18,5 +19,6 @@ CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd_snapshot` (
   `filedate` datetime DEFAULT NULL,
   `gueltig_von` date NOT NULL,
   `gueltig_bis` date NOT NULL,
-  PRIMARY KEY (`persnr`, `gueltig_von`)
+  PRIMARY KEY (`persnr`, `gueltig_von`),
+  KEY `ix_personalakte_scd_snapshot_valid_to` (`gueltig_bis`, `persnr`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

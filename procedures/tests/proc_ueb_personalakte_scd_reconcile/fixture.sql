@@ -25,8 +25,10 @@ CREATE TABLE `tbl_ueb_personalakte_scd` (
 
 CREATE TABLE `tbl_ueb_personalakte_scd_snapshot` LIKE `tbl_ueb_personalakte_scd`;
 ALTER TABLE `tbl_ueb_personalakte_scd_snapshot`
+  ADD COLUMN `gebdatum` date DEFAULT NULL AFTER `persnr`,
   DROP KEY `ix_personalakte_scd_alt_date`,
-  DROP COLUMN `persnr_alt`;
+  DROP COLUMN `persnr_alt`,
+  ADD KEY `ix_personalakte_scd_snapshot_valid_to` (`gueltig_bis`, `persnr`);
 
 CREATE TABLE `tbl_ueb_personalakte_scd_reconciliation` (
   `persnr` int(13) NOT NULL,
@@ -49,6 +51,19 @@ CREATE TABLE `tbl_uebertrag_aenderungen_werte` (
   `beschreibung` text DEFAULT NULL,
   `filedate` datetime DEFAULT NULL,
   KEY `ix_test_aenderungen_person_date` (`persnr`, `gueltig_von`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `tbl_uebertrag_aenderungen` (
+  `persnr` varchar(50) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `datum` datetime NOT NULL,
+  `feld` varchar(50) NOT NULL,
+  `wert` varchar(50) NOT NULL,
+  `gueltig_von` date NOT NULL,
+  `gueltig_bis` date NOT NULL,
+  `beschreibung` varchar(50) NOT NULL,
+  `filedate` datetime DEFAULT NULL,
+  KEY `ix_test_aenderungen_person_date` (`persnr`, `datum`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `test_assertions` (

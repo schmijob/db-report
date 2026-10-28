@@ -141,11 +141,21 @@ snapshot value for that field and records the conflict in
 `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive change
 is resolved in favor of the change log.
 
-PersNr-change rows in `tbl_uebertrag_aenderungen_werte` use `wert` for the old
-number and `persnr` for the new number. Reconciliation resolves chains from
-those links and keeps each historical number in `persnr_alt`; overlapping
-source snapshots for linked numbers hand off at the first new-number snapshot
-and are recorded in the reconciliation table. Any other overlapping canonical
+Some PersNr-change rows in `tbl_uebertrag_aenderungen_werte` contain the old
+number in `wert`, but retroactive exports can put the new number in both
+`wert` and `persnr`. Reconciliation also looks for a unique handoff between
+adjacent raw snapshots: the old number disappears, the new number begins, and
+the normalized names match. A unique match is applied when the old number is
+absent from current personalakte; a birthday mismatch prevents automatic
+mapping when both snapshots have a birthday. The candidate uses the snapshot
+boundary and any matching `gueltig_von` change event to set the alias timeline.
+Applied candidates and their snapshot/change-log evidence are written to the
+reconciliation table for HR review. Evidence includes name-bearing rows from
+`tbl_uebertrag_aenderungen` and effective-date events from
+`tbl_uebertrag_aenderungen_werte`. Ambiguous candidates, old numbers still
+present in current personalakte, and birthday conflicts are logged without
+merging. Overlapping source snapshots for linked numbers
+hand off at the first new-number snapshot. Any other overlapping canonical
 intervals stop reconciliation for inspection. `tbl_ueb_personalakte` remains
 the materialized one-row-per-person current projection. `vp_personal_u` exposes
 the normalized current-state view. Internal date-sensitive queries should use

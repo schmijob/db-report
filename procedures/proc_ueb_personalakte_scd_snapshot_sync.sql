@@ -46,6 +46,7 @@ SQL SECURITY DEFINER BEGIN
        AND s.gueltig_von < p_gueltig_von
        AND NOT (
               s.`name`        <=> c.`name`
+          AND (i.gebdatum IS NULL OR i.gebdatum = '0000-00-00' OR s.gebdatum <=> i.gebdatum)
           AND s.pdl           <=> c.pdl
           AND s.oe            <=> c.oe
           AND s.schichtgruppe <=> c.schichtgruppe
@@ -71,6 +72,7 @@ SQL SECURITY DEFINER BEGIN
      AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
      AND s.gueltig_von = p_gueltig_von
        SET s.`name` = c.`name`
+         , s.gebdatum = COALESCE(NULLIF(i.gebdatum, '0000-00-00'), s.gebdatum)
          , s.pdl = c.pdl
          , s.oe = c.oe
          , s.schichtgruppe = c.schichtgruppe
@@ -88,11 +90,11 @@ SQL SECURITY DEFINER BEGIN
          , s.gueltig_bis = '9999-12-31';
 
     INSERT INTO tbl_ueb_personalakte_scd_snapshot (
-          persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
+          persnr, gebdatum, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
         , taetigkeit, team, br, übernahme, taetigkeit2, funktion
         , last_insert_update, filedate, gueltig_von, gueltig_bis
     )
-    SELECT c.persnr, c.`name`, c.pdl, c.oe, c.schichtgruppe, c.eg, c.beginn, c.ende
+    SELECT c.persnr, NULLIF(i.gebdatum, '0000-00-00'), c.`name`, c.pdl, c.oe, c.schichtgruppe, c.eg, c.beginn, c.ende
          , c.taetigkeit, c.team, c.br, c.übernahme, c.taetigkeit2, c.funktion
          , c.last_insert_update, c.filedate, p_gueltig_von, '9999-12-31'
       FROM tbl_ueb_personalakte c
@@ -120,7 +122,11 @@ SQL SECURITY DEFINER BEGIN
      AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
        SET s.last_insert_update = c.last_insert_update
          , s.filedate = c.filedate
+         , s.gebdatum = COALESCE(NULLIF(i.gebdatum, '0000-00-00'), s.gebdatum)
      WHERE s.gueltig_bis = '9999-12-31'
+       AND (i.gebdatum IS NULL
+            OR i.gebdatum = '0000-00-00'
+            OR s.gebdatum <=> i.gebdatum)
        AND s.`name`        <=> c.`name`
        AND s.pdl           <=> c.pdl
        AND s.oe            <=> c.oe

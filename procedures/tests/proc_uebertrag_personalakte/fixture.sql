@@ -73,8 +73,10 @@ CREATE TABLE `tbl_ueb_personalakte_scd` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `tbl_ueb_personalakte_scd_snapshot` LIKE `tbl_ueb_personalakte_scd`;
 ALTER TABLE `tbl_ueb_personalakte_scd_snapshot`
+  ADD COLUMN `gebdatum` date DEFAULT NULL AFTER `persnr`,
   DROP KEY `ix_personalakte_scd_alt_date`,
-  DROP COLUMN `persnr_alt`;
+  DROP COLUMN `persnr_alt`,
+  ADD KEY `ix_personalakte_scd_snapshot_valid_to` (`gueltig_bis`, `persnr`);
 
 CREATE TABLE `tbl_stamm_OE_translate` (
   `OE_alt` varchar(100) NOT NULL,

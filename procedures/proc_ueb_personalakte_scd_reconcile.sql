@@ -8,6 +8,8 @@ SQL SECURITY DEFINER BEGIN
 
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_events;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_persnr_links;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_explicit_links;
+    DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_identity_candidates;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_persnr_map;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_snapshots;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_identity_handoffs;
@@ -23,10 +25,114 @@ SQL SECURITY DEFINER BEGIN
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_markers;
     DROP TEMPORARY TABLE IF EXISTS tmp_pa_scd_groups;
 
-    -- The change log records a new PersNr in `persnr` and the old one in
-    -- `wert`. Resolve chains to the latest canonical number; keep each
-    -- interval's source number in persnr_alt.
-    CREATE TEMPORARY TABLE tmp_pa_scd_persnr_links ENGINE=InnoDB AS
+    -- Some change-log rows contain the old PersNr in wert. Keep those direct
+    -- links, and also identify likely number changes from adjacent snapshots.
+    -- Snapshot matches are applied when unique, absent from current personalakte,
+    -- and birthday-consistent; the evidence is written for HR review.
+    CREATE TEMPORARY TABLE tmp_pa_scd_identity_candidates ENGINE=InnoDB AS
+    SELECT candidate.*,
+           COUNT(*) OVER (
+               PARTITION BY candidate.new_persnr, candidate.transition_date
+           ) AS new_candidate_count,
+           COUNT(*) OVER (
+               PARTITION BY candidate.old_persnr, candidate.transition_date
+           ) AS old_candidate_count,
+           CASE
+             WHEN COUNT(*) OVER (
+                      PARTITION BY candidate.new_persnr, candidate.transition_date
+                  ) = 1
+              AND COUNT(*) OVER (
+                      PARTITION BY candidate.old_persnr, candidate.transition_date
+                  ) = 1
+              AND candidate.old_missing_from_current = 1
+              AND (candidate.old_gebdatum IS NULL
+                   OR candidate.new_gebdatum IS NULL
+                   OR candidate.old_gebdatum = candidate.new_gebdatum)
+               THEN 1 ELSE 0
+           END AS apply_mapping
+      FROM (
+            SELECT DISTINCT
+                   old_snapshot.persnr AS old_persnr,
+                   new_snapshot.persnr AS new_persnr,
+                   new_snapshot.gueltig_von AS transition_date,
+                   old_snapshot.`name` AS old_name,
+                   new_snapshot.`name` AS new_name,
+                   old_snapshot.gebdatum AS old_gebdatum,
+                   new_snapshot.gebdatum AS new_gebdatum,
+                   old_snapshot.ende AS old_ende,
+                   old_snapshot.gueltig_bis AS old_snapshot_bis,
+                   new_snapshot.filedate AS new_filedate,
+                   NOT EXISTS (
+                       SELECT 1
+                         FROM tbl_ueb_personalakte current_personalakte
+                        WHERE current_personalakte.persnr = old_snapshot.persnr
+                   ) AS old_missing_from_current,
+                   EXISTS (
+                       SELECT 1
+                         FROM tbl_uebertrag_aenderungen a
+                        WHERE a.name = new_snapshot.`name`
+                          AND a.persnr = CAST(new_snapshot.persnr AS CHAR)
+                          AND a.feld = 'Personalnummer'
+                          AND a.gueltig_von = new_snapshot.gueltig_von
+                   ) AS new_persnr_log_event,
+                   (
+                       SELECT MAX(a.datum)
+                         FROM tbl_uebertrag_aenderungen a
+                        WHERE a.name = new_snapshot.`name`
+                          AND a.persnr = CAST(new_snapshot.persnr AS CHAR)
+                          AND a.feld = 'Personalnummer'
+                          AND a.gueltig_von = new_snapshot.gueltig_von
+                   ) AS new_persnr_log_event_at,
+                   EXISTS (
+                       SELECT 1
+                         FROM tbl_uebertrag_aenderungen a
+                        WHERE a.name = new_snapshot.`name`
+                          AND a.persnr = CAST(old_snapshot.persnr AS CHAR)
+                          AND a.datum < DATE_ADD(new_snapshot.gueltig_von, INTERVAL 1 DAY)
+                   ) AS old_same_name_in_log,
+                   (
+                       SELECT MAX(a.datum)
+                         FROM tbl_uebertrag_aenderungen a
+                        WHERE a.name = new_snapshot.`name`
+                          AND a.persnr = CAST(old_snapshot.persnr AS CHAR)
+                          AND a.datum < DATE_ADD(new_snapshot.gueltig_von, INTERVAL 1 DAY)
+                   ) AS old_same_name_log_date,
+                   EXISTS (
+                       SELECT 1
+                         FROM tbl_uebertrag_aenderungen a
+                        WHERE a.name = new_snapshot.`name`
+                          AND a.persnr = CAST(new_snapshot.persnr AS CHAR)
+                          AND a.feld IN ('Nachname', 'Vorname')
+                          AND a.gueltig_von <= new_snapshot.gueltig_von
+                          AND a.gueltig_bis >= new_snapshot.gueltig_von
+                   ) AS new_name_fields_in_log
+              FROM tbl_ueb_personalakte_scd_snapshot old_snapshot
+              JOIN tbl_ueb_personalakte_scd_snapshot new_snapshot
+                ON new_snapshot.persnr <> old_snapshot.persnr
+               AND old_snapshot.gueltig_bis = DATE_SUB(new_snapshot.gueltig_von, INTERVAL 1 DAY)
+               AND NULLIF(TRIM(new_snapshot.`name`), '') IS NOT NULL
+               AND LOWER(TRIM(old_snapshot.`name`)) = LOWER(TRIM(new_snapshot.`name`))
+             WHERE old_snapshot.persnr > 0
+               AND new_snapshot.persnr > 0
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM tbl_ueb_personalakte_scd_snapshot prior_new
+                     WHERE prior_new.persnr = new_snapshot.persnr
+                       AND prior_new.gueltig_von < new_snapshot.gueltig_von
+               )
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM tbl_ueb_personalakte_scd_snapshot later_old
+                     WHERE later_old.persnr = old_snapshot.persnr
+                       AND later_old.gueltig_von >= new_snapshot.gueltig_von
+               )
+      ) candidate;
+
+    ALTER TABLE tmp_pa_scd_identity_candidates
+      ADD KEY ix_tmp_pa_scd_identity_candidates_old_date (old_persnr, transition_date),
+      ADD KEY ix_tmp_pa_scd_identity_candidates_new_date (new_persnr, transition_date);
+
+    CREATE TEMPORARY TABLE tmp_pa_scd_explicit_links ENGINE=InnoDB AS
     SELECT DISTINCT CAST(TRIM(wert) AS UNSIGNED) AS old_persnr,
                     persnr AS new_persnr
       FROM tbl_uebertrag_aenderungen_werte
@@ -36,6 +142,20 @@ SQL SECURITY DEFINER BEGIN
        AND persnr > 0
        AND CAST(TRIM(wert) AS UNSIGNED) <> persnr
        AND LOWER(COALESCE(beschreibung, '')) NOT LIKE '(gel%';
+
+    CREATE TEMPORARY TABLE tmp_pa_scd_persnr_links ENGINE=InnoDB AS
+    SELECT old_persnr, new_persnr
+      FROM tmp_pa_scd_explicit_links
+    UNION
+    SELECT candidate.old_persnr, candidate.new_persnr
+      FROM tmp_pa_scd_identity_candidates candidate
+     WHERE candidate.apply_mapping = 1
+       AND NOT EXISTS (
+            SELECT 1
+              FROM tmp_pa_scd_explicit_links explicit_link
+             WHERE explicit_link.old_persnr = candidate.old_persnr
+               AND explicit_link.new_persnr <> candidate.new_persnr
+       );
 
     IF EXISTS (
         SELECT old_persnr
@@ -533,6 +653,50 @@ SQL SECURITY DEFINER BEGIN
     INSERT INTO tbl_ueb_personalakte_scd_reconciliation
     SELECT persnr, datum, feld, snapshot_wert, aenderungswerte, grund
       FROM tmp_pa_scd_conflicts;
+
+    INSERT INTO tbl_ueb_personalakte_scd_reconciliation (
+        persnr, datum, feld, snapshot_wert, aenderungswerte, grund
+    )
+    SELECT COALESCE(m.canonical_persnr, c.new_persnr),
+           c.transition_date,
+           CONCAT('persnr_candidate_', c.old_persnr),
+           JSON_OBJECT(
+               'old_persnr', c.old_persnr,
+               'name', c.old_name,
+               'gebdatum', c.old_gebdatum,
+               'ende', c.old_ende,
+               'snapshot_bis', c.old_snapshot_bis,
+               'old_missing_from_current', c.old_missing_from_current,
+               'new_candidate_count', c.new_candidate_count,
+               'old_candidate_count', c.old_candidate_count
+           ),
+           JSON_OBJECT(
+               'new_persnr', c.new_persnr,
+               'name', c.new_name,
+               'gebdatum', c.new_gebdatum,
+               'snapshot_von', c.transition_date,
+               'filedate', c.new_filedate,
+               'persnr_event_at_gueltig_von', c.new_persnr_log_event,
+               'persnr_event_datum', c.new_persnr_log_event_at,
+               'old_persnr_name_in_log', c.old_same_name_in_log,
+               'old_name_log_datum', c.old_same_name_log_date,
+               'new_name_fields_in_log', c.new_name_fields_in_log,
+               'mapping_applied', c.apply_mapping
+           ),
+           CASE
+             WHEN c.apply_mapping = 1
+               THEN 'Applied unique snapshot identity candidate; HR review'
+             WHEN c.old_gebdatum IS NOT NULL
+              AND c.new_gebdatum IS NOT NULL
+              AND c.old_gebdatum <> c.new_gebdatum
+               THEN 'Same-name snapshot candidate has birthday mismatch; not applied'
+             WHEN c.old_missing_from_current = 0
+               THEN 'Old PersNr remains in current personalakte; not applied'
+             ELSE 'Ambiguous same-name snapshot candidate; not applied'
+           END
+      FROM tmp_pa_scd_identity_candidates c
+      LEFT JOIN tmp_pa_scd_persnr_map m
+        ON m.source_persnr = c.new_persnr;
 
     INSERT INTO tbl_ueb_personalakte_scd_reconciliation (
         persnr, datum, feld, snapshot_wert, aenderungswerte, grund

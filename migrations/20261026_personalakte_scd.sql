@@ -22,10 +22,12 @@ ALTER TABLE `tbl_ueb_personalakte_scd`
   ADD KEY `ix_personalakte_scd_alt_date` (`persnr_alt`, `gueltig_von`, `gueltig_bis`);
 
 ALTER TABLE `tbl_ueb_personalakte_scd_snapshot`
+  ADD COLUMN `gebdatum` date DEFAULT NULL AFTER `persnr`,
   ADD COLUMN `gueltig_von` date NOT NULL,
   ADD COLUMN `gueltig_bis` date NOT NULL,
   DROP PRIMARY KEY,
-  ADD PRIMARY KEY (`persnr`, `gueltig_von`);
+  ADD PRIMARY KEY (`persnr`, `gueltig_von`),
+  ADD KEY `ix_personalakte_scd_snapshot_valid_to` (`gueltig_bis`, `persnr`);
 
 CREATE TABLE IF NOT EXISTS `tbl_ueb_personalakte_scd_reconciliation` (
   `persnr` int(13) NOT NULL,
@@ -49,6 +51,15 @@ SELECT `persnr`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
      , `taetigkeit`, `team`, `br`, `übernahme`, `taetigkeit2`, `funktion`
      , `last_insert_update`, `filedate`, COALESCE(DATE(`filedate`), CURDATE()), '9999-12-31'
   FROM `tbl_ueb_personalakte`;
+
+-- Birthday is optional identity evidence. Retain it only in compact raw
+-- snapshots; the serving SCD does not expose it.
+UPDATE `tbl_ueb_personalakte_scd_snapshot` s
+JOIN `tbl_import_personalakte` i
+  ON i.pers_nr = s.persnr
+ AND DATE(i.filedate) = DATE(s.filedate)
+   SET s.gebdatum = NULLIF(i.gebdatum, '0000-00-00')
+ WHERE s.gueltig_von = DATE(s.filedate);
 
 INSERT INTO tbl_ueb_personalakte_scd (
       `persnr`, `persnr_alt`, `name`, `pdl`, `oe`, `schichtgruppe`, `eg`, `beginn`, `ende`
