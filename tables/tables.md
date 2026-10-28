@@ -36,9 +36,10 @@ meaning and approved usage in `docs/architecture/`.
 - **Storage:** identical consecutive normalized values, including
   `persnr_alt`, reuse one version; `filedate` and `last_insert_update` do not
   split intervals.
-- **Coverage:** migration seeds the current snapshot only. Dates before the
-  first loaded snapshot require historical CSV replay and must not be assumed
-  to have a known state.
+- **Coverage:** the additive migration creates empty SCD tables. Historical
+  coverage comes from staged CSV exports; dates before the earliest staged
+  export must not be assumed to have a known state. After cutover, the normal
+  Personalakte transfer keeps the latest interval current.
 
 ## `tbl_ueb_personalakte_scd_snapshot`
 
@@ -77,3 +78,7 @@ meaning and approved usage in `docs/architecture/`.
   rows into `tbl_import_personalakte`, which remains the latest import used by
   other procedures. Truncate this staging table after reviewing a successful
   backfill.
+
+The preparation migration and backfill procedure add new objects only. They do
+not change the current import table, current materialized Personalakte table,
+existing procedures, or views.

@@ -101,23 +101,27 @@ tbl_import_personalakte
         |
         v
 proc_uebertrag_personalakte
-        ^
-        |
-tbl_import_personalakte_scd_backfill (historical replay only)
-        |
-        +-> tbl_ueb_personalakte_scd_snapshot (compact snapshot fallback intervals)
-        |                |
-        |                +---- tbl_uebertrag_aenderungen_werte
-        |                                  |
-        |                                  v
-        +--------------------> proc_ueb_personalakte_scd_reconcile
-                                      |
-                                      +-> tbl_ueb_personalakte_scd
-                                              +-> date-sensitive internal consumers
         |
         +-> tbl_ueb_personalakte (materialized current row per person)
                 +-> vp_personal_u (current-personnel view)
                 +-> external consumers
+        |
+        +-> tbl_ueb_personalakte_scd_snapshot (compact snapshot intervals)
+                            |
+                            v
+                 proc_ueb_personalakte_scd_reconcile
+                            |
+                            +-> tbl_ueb_personalakte_scd
+                                    +-> date-sensitive internal consumers
+
+tbl_import_personalakte_scd_backfill (historical replay only)
+        |
+        v
+proc_ueb_personalakte_scd_backfill
+        |
+        +-> tbl_ueb_personalakte_scd_snapshot
+
+tbl_uebertrag_aenderungen_werte -> proc_ueb_personalakte_scd_reconcile
 ```
 
 `tbl_ueb_personalakte_scd.persnr` is the canonical person number, resolved to
@@ -160,6 +164,12 @@ intervals stop reconciliation for inspection. `tbl_ueb_personalakte` remains
 the materialized one-row-per-person current projection. `vp_personal_u` exposes
 the normalized current-state view. Internal date-sensitive queries should use
 `tbl_ueb_personalakte_scd`.
+
+Historical exports for the Personalakte SCD are uploaded to
+`tbl_import_personalakte_scd_backfill`, kept separate from the current-only
+`tbl_import_personalakte`. `proc_ueb_personalakte_scd_backfill` replays those
+dated files into compact source snapshots and the new SCD tables. This
+preparation path does not change the current table or its consumers.
 
 ## Logging / Infrastructure
 

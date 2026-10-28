@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Validate Personalliste ALL exports and create one staging-ready TSV.
 
-The report's Druckdatum is written to both lastinsertupdate and filedate. The
-raw attachments are read in place; only the requested final output is written.
+The report's Druckdatum is written to filedate. lastinsertupdate is set to the
+preparation timestamp. The raw attachments are read in place; only the requested
+final output is written.
 """
 
 from __future__ import annotations

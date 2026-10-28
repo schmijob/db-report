@@ -5,26 +5,18 @@ upgrade or rollback step. Keep deployment tooling in `db-workbench`.
 
 ## `20261026_personalakte_scd.sql`
 
-Keeps the existing materialized one-row-per-person table at
-`tbl_ueb_personalakte`, creates the compact snapshot baseline, the reconciled
-`tbl_ueb_personalakte_scd`, the reconciliation inspection table, and a separate
-import-schema staging table for historical CSVs. It seeds both interval tables
-from the current snapshot and recreates `vp_personal_u` over the current table.
-This is a one-time migration and must run before deploying procedures that
-reference the SCD table.
+Creates the isolated historical upload table, compact snapshot intervals, the
+date-sensitive Personalakte table, and reconciliation evidence. It does not
+change the live import, current materialized table, views, or existing
+procedures. The new backfill procedure rebuilds only these new interval and
+evidence tables from `tbl_import_personalakte_scd_backfill`; it reads the
+existing current Personalakte and change history when resolving candidate
+PersNr handoffs.
 
-Apply the view definitions under `views/` after the migration. In particular,
-the cluster and attendance views no longer reconstruct OE/activity from the
-change log for each read; they join the materialized personalakte version by
-the fact date.
-
-The migration cannot supply historical coverage. When daily CSV snapshots are
-available, load them into `tbl_import_personalakte_scd_backfill`, not the live
-`tbl_import_personalakte`. Clear the two interval tables, set
-`@personalakte_scd_backfill = 1`, and replay each date oldest to newest by
-setting `@personalakte_scd_backfill_date` and calling
-`proc_uebertrag_personalakte`. Reconcile once after replay, then clear both
-session variables and truncate the staging table after reviewing the result.
-The snapshot baseline coalesces identical adjacent states;
-the serving table adds only boundaries where a resolved business value changes.
-Neither stores one row per person per day.
+Load dated exports into `tbl_import_personalakte_scd_backfill` using the
+prepared TSV, then call `proc_ueb_personalakte_scd_backfill()` once. The call
+replays all available Druckdatum dates oldest to newest and rebuilds the
+snapshot and serving intervals. Keep the upload table until the result has
+been reviewed and copied to the sanitized LOCAL database. Birthday values are
+optional evidence in the raw snapshot table and are not exposed by the serving
+SCD.

@@ -8,57 +8,18 @@ SQL SECURITY DEFINER BEGIN
 
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
     CREATE TEMPORARY TABLE tmp_personalakte_import LIKE tbl_import_personalakte;
-
-    IF COALESCE(@personalakte_scd_backfill, 0) = 1 THEN
-        IF @personalakte_scd_backfill_date IS NULL THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'Set @personalakte_scd_backfill_date before replaying a personalakte snapshot';
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1
-              FROM tbl_import_personalakte_scd_backfill
-             WHERE filedate >= DATE(@personalakte_scd_backfill_date)
-               AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY)
-        ) THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'No staged personalakte snapshot exists for the requested date';
-        END IF;
-
-        IF EXISTS (
-            SELECT pers_nr
-              FROM tbl_import_personalakte_scd_backfill
-             WHERE filedate >= DATE(@personalakte_scd_backfill_date)
-               AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY)
-             GROUP BY pers_nr
-            HAVING COUNT(*) > 1
-        ) THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'A staged personalakte snapshot contains duplicate personnel numbers';
-        END IF;
-
-        INSERT INTO tmp_personalakte_import
-        SELECT *
-          FROM tbl_import_personalakte_scd_backfill
-         WHERE filedate >= DATE(@personalakte_scd_backfill_date)
-           AND filedate < DATE_ADD(DATE(@personalakte_scd_backfill_date), INTERVAL 1 DAY);
-    ELSE
-        INSERT INTO tmp_personalakte_import
-        SELECT * FROM tbl_import_personalakte;
-    END IF;
+    INSERT INTO tmp_personalakte_import
+    SELECT * FROM tbl_import_personalakte;
     
     -- Prüfung, ob neue Änderungen vorhanden sind
     SELECT MAX(filedate) INTO var_filedate FROM tmp_personalakte_import imp;
     SELECT MAX(datum) INTO var_maxdate FROM tbl_datum;
     
 	 IF var_filedate IS NOT NULL
-	    AND (
-	        COALESCE(@personalakte_scd_backfill, 0) = 1
-	        OR NOT EXISTS (
+	    AND NOT EXISTS (
 	        SELECT 1
 	          FROM tbl_ueb_personalakte ueb
 	         WHERE ueb.filedate = var_filedate
-	        )
 	    ) THEN
 	 	-- Personalakte übertragen
 		INSERT INTO tbl_ueb_personalakte (persnr, `name`, pdl, oe, schichtgruppe, eg, beginn, ende, taetigkeit, team, br, übernahme, taetigkeit2, funktion, filedate)
@@ -148,10 +109,127 @@ SQL SECURITY DEFINER BEGIN
 
 		;
 
-		CALL proc_ueb_personalakte_scd_snapshot_sync(DATE(var_filedate));
+		-- Compact current source snapshots without writing to the backfill table.
+		UPDATE tbl_ueb_personalakte_scd_snapshot s
+		LEFT JOIN tmp_personalakte_import i
+		  ON i.pers_nr = s.persnr
+		 AND i.ende_besch IS NOT NULL
+		 AND i.ende_besch <> '2022-07-31'
+		 AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+		   SET s.gueltig_bis = DATE_SUB(DATE(var_filedate), INTERVAL 1 DAY)
+		 WHERE s.gueltig_bis = '9999-12-31'
+		   AND s.gueltig_von < DATE(var_filedate)
+		   AND i.pers_nr IS NULL;
 
-		IF COALESCE(@personalakte_scd_backfill, 0) = 0 THEN
-			CALL proc_ueb_personalakte_scd_reconcile();
+		UPDATE tbl_ueb_personalakte_scd_snapshot s
+		JOIN tbl_ueb_personalakte c
+		  ON c.persnr = s.persnr
+		 AND DATE(c.filedate) = DATE(var_filedate)
+		JOIN tmp_personalakte_import i
+		  ON i.pers_nr = c.persnr
+		 AND i.ende_besch IS NOT NULL
+		 AND i.ende_besch <> '2022-07-31'
+		 AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+		   SET s.gueltig_bis = DATE_SUB(DATE(var_filedate), INTERVAL 1 DAY)
+		 WHERE s.gueltig_bis = '9999-12-31'
+		   AND s.gueltig_von < DATE(var_filedate)
+		   AND NOT (
+		          s.`name`        <=> c.`name`
+		      AND (i.gebdatum IS NULL OR i.gebdatum = '0000-00-00' OR s.gebdatum <=> i.gebdatum)
+		      AND s.pdl           <=> c.pdl
+		      AND s.oe            <=> c.oe
+		      AND s.schichtgruppe <=> c.schichtgruppe
+		      AND s.eg            <=> c.eg
+		      AND s.beginn        <=> c.beginn
+		      AND s.ende          <=> c.ende
+		      AND s.taetigkeit    <=> c.taetigkeit
+		      AND s.team          <=> c.team
+		      AND s.br            <=> c.br
+		      AND s.übernahme     <=> c.übernahme
+		      AND s.taetigkeit2   <=> c.taetigkeit2
+		      AND s.funktion      <=> c.funktion
+		   );
+
+		UPDATE tbl_ueb_personalakte_scd_snapshot s
+		JOIN tbl_ueb_personalakte c
+		  ON c.persnr = s.persnr
+		 AND DATE(c.filedate) = DATE(var_filedate)
+		JOIN tmp_personalakte_import i
+		  ON i.pers_nr = c.persnr
+		 AND i.ende_besch IS NOT NULL
+		 AND i.ende_besch <> '2022-07-31'
+		 AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+		 AND s.gueltig_von = DATE(var_filedate)
+		   SET s.`name` = c.`name`
+		     , s.gebdatum = COALESCE(NULLIF(i.gebdatum, '0000-00-00'), s.gebdatum)
+		     , s.pdl = c.pdl
+		     , s.oe = c.oe
+		     , s.schichtgruppe = c.schichtgruppe
+		     , s.eg = c.eg
+		     , s.beginn = c.beginn
+		     , s.ende = c.ende
+		     , s.taetigkeit = c.taetigkeit
+		     , s.team = c.team
+		     , s.br = c.br
+		     , s.übernahme = c.übernahme
+		     , s.taetigkeit2 = c.taetigkeit2
+		     , s.funktion = c.funktion
+		     , s.last_insert_update = c.last_insert_update
+		     , s.filedate = c.filedate
+		     , s.gueltig_bis = '9999-12-31';
+
+		INSERT INTO tbl_ueb_personalakte_scd_snapshot (
+		      persnr, gebdatum, `name`, pdl, oe, schichtgruppe, eg, beginn, ende
+		    , taetigkeit, team, br, übernahme, taetigkeit2, funktion
+		    , last_insert_update, filedate, gueltig_von, gueltig_bis
+		)
+		SELECT c.persnr, NULLIF(i.gebdatum, '0000-00-00'), c.`name`, c.pdl, c.oe
+		     , c.schichtgruppe, c.eg, c.beginn, c.ende, c.taetigkeit, c.team, c.br
+		     , c.übernahme, c.taetigkeit2, c.funktion
+		     , c.last_insert_update, c.filedate, DATE(var_filedate), '9999-12-31'
+		  FROM tbl_ueb_personalakte c
+		  JOIN tmp_personalakte_import i
+		    ON i.pers_nr = c.persnr
+		   AND i.ende_besch IS NOT NULL
+		   AND i.ende_besch <> '2022-07-31'
+		   AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+		 WHERE DATE(c.filedate) = DATE(var_filedate)
+		   AND NOT EXISTS (
+		        SELECT 1
+		          FROM tbl_ueb_personalakte_scd_snapshot s
+		         WHERE s.persnr = c.persnr
+		           AND s.gueltig_bis = '9999-12-31'
+		   );
+
+		UPDATE tbl_ueb_personalakte_scd_snapshot s
+		JOIN tbl_ueb_personalakte c
+		  ON c.persnr = s.persnr
+		 AND DATE(c.filedate) = DATE(var_filedate)
+		JOIN tmp_personalakte_import i
+		  ON i.pers_nr = c.persnr
+		 AND i.ende_besch IS NOT NULL
+		 AND i.ende_besch <> '2022-07-31'
+		 AND i.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+		   SET s.last_insert_update = c.last_insert_update
+		     , s.filedate = c.filedate
+		     , s.gebdatum = COALESCE(NULLIF(i.gebdatum, '0000-00-00'), s.gebdatum)
+		 WHERE s.gueltig_bis = '9999-12-31'
+		   AND (i.gebdatum IS NULL OR i.gebdatum = '0000-00-00' OR s.gebdatum <=> i.gebdatum)
+		   AND s.`name`        <=> c.`name`
+		   AND s.pdl           <=> c.pdl
+		   AND s.oe            <=> c.oe
+		   AND s.schichtgruppe <=> c.schichtgruppe
+		   AND s.eg            <=> c.eg
+		   AND s.beginn        <=> c.beginn
+		   AND s.ende          <=> c.ende
+		   AND s.taetigkeit    <=> c.taetigkeit
+		   AND s.team          <=> c.team
+		   AND s.br            <=> c.br
+		   AND s.übernahme     <=> c.übernahme
+		   AND s.taetigkeit2   <=> c.taetigkeit2
+		   AND s.funktion      <=> c.funktion;
+
+		CALL proc_ueb_personalakte_scd_reconcile();
 				
 				
 				-- übernommene ZAK aus Verlängerungsliste (=tbl_stamm_persnr ersetzt Ende Beschäftigung) löschen
@@ -257,7 +335,6 @@ SQL SECURITY DEFINER BEGIN
 
 
 		CALL proc_ueb_fz_geister_loeschen();
-		END IF;
 			 	
 	END IF;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;

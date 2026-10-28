@@ -45,82 +45,32 @@ read-only checks that each return a single true/false value; use these to make
 important source-data assumptions explicit.
 
 Optional interactive smoke tests against configured LOCAL live in
-`procedures/tests/<procedure_name>.sql`. See the [db-workbench architecture guide](https://github.com/schmijob/db-workbench/blob/main/docs/architecture/architecture.md#procedure-fixture-suite)
-for fixture-runner behavior and the [agent skills](https://github.com/schmijob/db-workbench/blob/main/docs/skills/skills.md#configured-project-changes)
-for how to run tests and prepare a candidate. The agent-to-human handoff is
-defined in this repository's `AGENTS.md`.
+`procedures/tests/<procedure_name>.sql`. From the db-report checkout root, see
+`../db-workbench/docs/architecture/architecture.md#procedure-fixture-suite`
+for fixture-runner behavior and
+`../db-workbench/docs/skills/using-db-workbench.md` for shared
+procedure-development steps. The agent-to-human handoff is defined in this
+repository's `AGENTS.md`.
 
 ## Personalakte SCD
 
-`proc_uebertrag_personalakte` records one normalized snapshot in compact
-intervals by calling `proc_ueb_personalakte_scd_snapshot_sync` and, outside
-backfill, rebuilds the serving SCD by calling
-`proc_ueb_personalakte_scd_reconcile`.
-The SCD keeps `persnr` as the canonical person key and stores the source number
-valid during each interval in `persnr_alt`. Reconciliation uses direct
-old-to-new log links when present. It also applies a unique adjacent-snapshot
-candidate when the old number disappears as the new number begins with the same
-name and the old number is absent from current personalakte; a known birthday
-mismatch blocks automatic mapping. The candidate's snapshot and change-log
-evidence from `tbl_uebertrag_aenderungen` and
-`tbl_uebertrag_aenderungen_werte` is recorded for HR review. Snapshot
-boundaries and effective `gueltig_von` dates determine when `persnr_alt`
-changes.
-Date-sensitive fact joins use `persnr_alt` plus the fact date, while grouping
-by canonical person uses `persnr`. If a linked old-number snapshot continues
-after the new number appears, reconciliation closes it at that handoff and
-records `persnr_alias_handoff` for review.
-The reconciler takes the latest `aenderungsdatum` for each effective date and
-field. If equally recent records disagree, a date value is invalid, or a
-change already present by the snapshot's `filedate` disagrees with that
-snapshot, it uses the snapshot value for that field and records the conflict
-in `tbl_ueb_personalakte_scd_reconciliation`. A later-imported retroactive
-change remains authoritative over an older snapshot.
+`proc_ueb_personalakte_scd_backfill()` rebuilds compact snapshot intervals and
+the serving SCD from `tbl_import_personalakte_scd_backfill`. It replays every
+staged Druckdatum oldest to newest and writes only to the new SCD, snapshot, and
+reconciliation tables. The staging table remains available for review and
+repeatable rebuilds.
 
-For historical CSV replay, export the `Personalliste ALL.csv` attachments with
-the Outlook macro to `C:\db-report\.worktrees\personalakte-backfill\raw`
-or another ignored folder under `.worktrees` or `consumers`. Run
-`python scripts/prepare_personalliste_backfill.py <raw-folder> --validate-only`
-to validate the complete files. The script locates the report header by its
-labels while retaining empty separator columns. The `PersNr` header is needed
-to locate the mutable, nullable personnel number; rows with a blank `PersNr`
-are excluded. The `Anzahl Personen` footer row is discarded without using its
-count. Every other source column may be absent, and absent columns and blank
-cells are emitted as SQL `NULL`. It uses `Druckdatum` for `filedate` and the
-preprocessing time for `lastinsertupdate`, and checks dates and duplicate
-nonblank personnel numbers within each snapshot. `--structure-only
---validate-only` checks the file layout when a sample has had person values
-removed; it does not validate cell values.
-After validation, run the script once more with `--output <path>` under
-`.worktrees` or `consumers` to create one consolidated TSV. The default output
-is beside the raw folder. It fails on conflicting snapshots for one date unless
-`--latest-per-day` is explicitly selected. Load only that prepared file once
-into `tbl_import_personalakte_scd_backfill`; the raw attachments do not need to
-be uploaded or loaded separately.
-
-For procedure tests, use small synthetic people and snapshot dates in the
-procedure fixture suite under
-`procedures/tests/proc_uebertrag_personalakte/` and
-`procedures/tests/proc_ueb_personalakte_scd_reconcile/`. Run it from db-workbench's
-**Stored procedure development → Run isolated fixture suite in LOCAL** menu.
-The runner loads these synthetic fixtures once into a disposable schema; it
-does not read the configured LOCAL tables. Do not use the personal exports as
-test fixtures.
-`proc_uebertrag_personalakte` also updates the materialized current table and
-snapshot history, so run a full replay in a disposable database or LOCAL copy,
-not against a shared LOCAL schema. The later production backfill is one staging
-load followed by one replay call per snapshot date; those calls process the
-already loaded rows and do not import the source files again.
-
-Do not replace the live `tbl_import_personalakte`: other procedures read it as
-the latest import. Clear `tbl_ueb_personalakte_scd_snapshot` and
-`tbl_ueb_personalakte_scd`, then set `@personalakte_scd_backfill = 1` and
-`@personalakte_scd_backfill_date` to each snapshot date, oldest to newest, and
-call `proc_uebertrag_personalakte` once per date. The procedure reads only that
-date from the staging table, skips current-day side effects, and defers
-reconciliation until replay is complete. Then call
-`proc_ueb_personalakte_scd_reconcile()` and clear both session variables.
-After confirming the backfill, truncate the staging table to remove the raw
-copies.
-`proc_uebertrag_aenderungen` also rebuilds the serving SCD after refreshing the
+After cutover, `proc_uebertrag_personalakte` writes each current import into
+`tbl_ueb_personalakte` as before, updates the compact snapshot table directly,
+and calls `proc_ueb_personalakte_scd_reconcile()` to rebuild the date-sensitive
+table. `proc_uebertrag_aenderungen` also rebuilds the SCD after refreshing the
 change log.
+
+The SCD uses canonical `persnr` across resolved PersNr changes and stores the
+source number active in each interval as `persnr_alt`. Reconciliation uses
+change history as the authority for field values and snapshots as fallback
+evidence when the two disagree. It applies a unique adjacent-snapshot PersNr
+handoff when the old number disappears and the new number begins with the same
+name, subject to available birthday consistency, and records the evidence for
+HR review. Date-sensitive facts join by `persnr_alt` and their event date;
+canonical person reporting groups by `persnr`.
