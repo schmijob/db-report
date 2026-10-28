@@ -574,8 +574,17 @@ SQL SECURITY DEFINER BEGIN
                  AND (r.expected_shift = 1 OR COALESCE(r.expected_sollzeit, r.tp_sollzeit) IS NOT NULL)
                  AND ((r.expected_shift = 1 AND r.datum BETWEEN CURDATE() AND CURDATE() + INTERVAL 1 DAY)
                    OR (r.expected_shift <> 1 AND r.datum = CURDATE()))
-                 AND NOW() >= TIMESTAMP(CASE WHEN r.expected_shift = 1 THEN r.datum - INTERVAL 1 DAY ELSE r.datum END,
-                                         CASE WHEN r.expected_shift = 1 THEN '22:00:00' ELSE COALESCE(r.expected_sollzeit, r.tp_sollzeit, '00:00:00') END)
+                 -- A 00:00 night Sollzeit is a date-boundary placeholder; only that value means 22:00 on the prior date.
+                 AND NOW() >= TIMESTAMP(CASE WHEN r.expected_shift = 1
+                                                   AND COALESCE(r.expected_sollzeit, r.tp_sollzeit, '00:00:00') = '00:00:00'
+                                              THEN r.datum - INTERVAL 1 DAY
+                                              ELSE r.datum
+                                         END,
+                                         CASE WHEN r.expected_shift = 1
+                                                   AND COALESCE(r.expected_sollzeit, r.tp_sollzeit, '00:00:00') = '00:00:00'
+                                              THEN '22:00:00'
+                                              ELSE COALESCE(r.expected_sollzeit, r.tp_sollzeit, '00:00:00')
+                                         END)
                 THEN '~'
                 WHEN r.arbeitstag = 0
                  AND r.absence_anwesenheit IS NOT NULL
