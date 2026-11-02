@@ -177,11 +177,18 @@ the normalized current-state view. Internal date-sensitive queries should use
 Historical exports are uploaded to `tbl_import_personalakte_scd_backfill`, kept
 separate from the current-only `tbl_import_personalakte`.
 `proc_uebertrag_personalakte_raw_scd(1)` retains the raw fields in
-`tbl_import_personalakte_scd_raw` as compact source-state intervals and records
-all export dates in `tbl_import_personalakte_scd_dates`. This layer applies no
+`tbl_import_personalakte_scd_raw` as compact source-row intervals and records
+all export dates in `tbl_import_personalakte_scd_dates`. It preserves multiple
+rows with the same PersNr in one export; a non-unique row hash and duplicate
+ordinal track row occurrences across snapshots. This layer applies no
 Personalakte normalization or business rules. Both current and historical
 paths use `proc_uebertrag_personalakte_transform_snapshot`, so a change to the
 business rules can be replayed against the retained raw source history.
+When one export contains multiple tenure rows for a PersNr, the shared
+transform selects the latest employment start on or before the snapshot date;
+the previous tenure remains selected until that start. Different source rows
+with the same PersNr and employment start stop for review rather than being
+silently collapsed.
 
 ## Logging / Infrastructure
 

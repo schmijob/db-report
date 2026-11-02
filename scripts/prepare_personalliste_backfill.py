@@ -55,28 +55,41 @@ def normalize_label(value: str) -> str:
 # original index. Empty separator columns in the report therefore stay intact.
 HEADER_TO_COLUMN = {
     "persnr": "pers_nr",
+    "persno": "pers_nr",
     "name vorname": "name_vorname",
+    "name first name": "name_vorname",
     "03 zeitarbeitsfirma": "zeitarbeitsfirma",
     "zeitarbeitsfirma": "zeitarbeitsfirma",
+    "employee group assignment 3": "zeitarbeitsfirma",
     "oe der person": "oe_der_person",
+    "employee s ou": "oe_der_person",
     "10 schicht": "schicht",
     "schicht": "schicht",
+    "employee group assignment 10": "schicht",
     "info 2": "info",
     "info": "info",
     "beginn beschaftigung": "beginn_besch",
+    "start date of employment": "beginn_besch",
     "ende beschaftigung": "ende_besch",
+    "end date of employment": "ende_besch",
     "eg": "eg",
     "entgeltgruppe": "eg",
     "01 geschlecht": "geschlecht",
     "geschlecht": "geschlecht",
+    "employee group assignment 1": "geschlecht",
     "tatigkeit": "taetigkeit",
+    "activity": "taetigkeit",
     "13 team": "team",
     "team": "team",
+    "employee group assignment 13": "team",
     "12 betriebsrat": "betriebsrat",
     "betriebsrat": "betriebsrat",
+    "employee group assignment 12": "betriebsrat",
     "eintrittsdatum": "einstellungsdatum",
     "14 tatigkeit": "taetigkeit2",
+    "employee group assignment 14": "taetigkeit2",
     "16 funktion": "funktion",
+    "employee group assignment 16": "funktion",
     "geb datum": "gebdatum",
 }
 
@@ -183,7 +196,7 @@ def parse_printed_at(rows: list[list[str]], header_index: int, path: Path) -> da
     found: list[datetime] = []
     for row in rows[:header_index]:
         for index, cell in enumerate(row):
-            if normalize_label(cell).startswith("druckdatum"):
+            if normalize_label(cell).startswith(("druckdatum", "print date")):
                 value = next((part.strip() for part in row[index + 1 :] if part.strip()), "")
                 if not value:
                     raise ReportError(f"{path.name}: Druckdatum has no value")
@@ -219,7 +232,9 @@ def find_footer_index(rows: list[list[str]], header_index: int) -> int:
     for row_index in range(header_index + 1, len(rows)):
         row = rows[row_index]
         for index, cell in enumerate(row):
-            if normalize_label(cell).startswith("anzahl personen"):
+            if normalize_label(cell).startswith(
+                ("anzahl personen", "number of persons", "no of employees")
+            ):
                 return row_index
     return len(rows)
 
@@ -266,7 +281,6 @@ def normalized_data_rows(
         lastinsertupdate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     width = len(report.rows[report.header_index])
     person_index = report.header_indices.get("pers_nr")
-    seen: set[int] = set()
     normalized_rows: list[list[str | int | None]] = []
     source_row_count = 0
     skipped_null_persnr = 0
@@ -295,10 +309,6 @@ def normalized_data_rows(
         if person_number is None:
             skipped_null_persnr += 1
             continue
-        if person_number in seen:
-            raise ReportError(f"{path.name}: duplicate PersNr. on CSV row {row_index + 1}")
-        seen.add(person_number)
-
         values: dict[str, str | int | None] = {}
         for column in DB_COLUMNS:
             source_index = report.header_indices.get(column)
@@ -539,7 +549,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.structure_only:
             print("Headers, Druckdatum, and row widths checked; cell values were not checked; footer excluded")
         else:
-            print("Row widths, PersNr. header, dates, and duplicate nonblank PersNr. values checked; footer excluded")
+            print("Row widths, PersNr. values, dates, and footer checked; duplicate PersNr. rows are retained")
         if args.validate_only:
             print("Validation only; no prepared file was written.")
         else:

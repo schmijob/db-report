@@ -8,6 +8,7 @@ CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte_transform_sna
 SQL SECURITY DEFINER BEGIN
     DECLARE var_filedate DATETIME;
     DECLARE var_maxdate DATE;
+    DECLARE var_ambiguous_tenures BIGINT DEFAULT 0;
 
     IF p_snapshot_date IS NULL OR p_from_raw_history IS NULL
        OR p_from_raw_history NOT IN (0, 1) THEN
@@ -15,8 +16,13 @@ SQL SECURITY DEFINER BEGIN
             SET MESSAGE_TEXT = 'A snapshot date and a valid source flag are required';
     END IF;
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import_raw;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_normalized;
+    -- The raw staging table is deliberately keyless so duplicate PersNr rows
+    -- survive until the tenure selection below.
+    CREATE TEMPORARY TABLE tmp_personalakte_import_raw AS
+    SELECT * FROM tbl_import_personalakte WHERE 1 = 0;
     CREATE TEMPORARY TABLE tmp_personalakte_import LIKE tbl_import_personalakte;
     CREATE TEMPORARY TABLE tmp_personalakte_normalized LIKE tbl_ueb_personalakte;
 
@@ -25,7 +31,7 @@ SQL SECURITY DEFINER BEGIN
           FROM tbl_import_personalakte_scd_dates d
          WHERE d.snapshot_date = p_snapshot_date;
 
-        INSERT INTO tmp_personalakte_import (
+        INSERT INTO tmp_personalakte_import_raw (
               pers_nr, name_vorname, zeitarbeitsfirma, oe_der_person, schicht
             , info, beginn_besch, ende_besch, eg, geschlecht, taetigkeit, team
             , betriebsrat, einstellungsdatum, taetigkeit2, funktion, gebdatum
@@ -40,18 +46,86 @@ SQL SECURITY DEFINER BEGIN
          WHERE r.gueltig_von <= p_snapshot_date
            AND r.gueltig_bis >= p_snapshot_date;
     ELSE
-        INSERT INTO tmp_personalakte_import
+        INSERT INTO tmp_personalakte_import_raw
         SELECT *
           FROM tbl_import_personalakte
          WHERE filedate >= p_snapshot_date
            AND filedate < DATE_ADD(p_snapshot_date, INTERVAL 1 DAY);
-        SELECT MAX(filedate) INTO var_filedate FROM tmp_personalakte_import;
+        SELECT MAX(filedate) INTO var_filedate FROM tmp_personalakte_import_raw;
     END IF;
 
-    IF var_filedate IS NULL OR NOT EXISTS (SELECT 1 FROM tmp_personalakte_import) THEN
+    IF var_filedate IS NULL OR NOT EXISTS (SELECT 1 FROM tmp_personalakte_import_raw) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'No Personalakte input exists for the requested snapshot date';
     END IF;
+
+    -- Same-PersNr rows with different employment starts represent separate
+    -- tenures. If two different rows share the same start, neither is a safe
+    -- winner for the one-person normalized snapshot.
+    SELECT COUNT(*) INTO var_ambiguous_tenures
+      FROM (
+            SELECT p.pers_nr, p.beginn_besch
+              FROM tmp_personalakte_import_raw p
+             WHERE p.ende_besch IS NOT NULL
+               AND p.ende_besch <> '2022-07-31'
+               AND p.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+             GROUP BY p.pers_nr, p.beginn_besch
+            HAVING COUNT(DISTINCT SHA2(JSON_ARRAY(
+                       p.name_vorname, p.zeitarbeitsfirma, p.oe_der_person
+                     , p.schicht, p.info, p.beginn_besch, p.ende_besch, p.eg
+                     , p.geschlecht, p.taetigkeit, p.team, p.betriebsrat
+                     , p.einstellungsdatum, p.taetigkeit2, p.funktion, p.gebdatum
+                   ), 256)) > 1
+           ) ambiguous;
+    IF var_ambiguous_tenures > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Different Personalakte rows share a PersNr and employment start';
+    END IF;
+
+    -- Keep the latest tenure that has started as of this snapshot. If all
+    -- available tenures start later, retain the nearest upcoming tenure.
+    INSERT INTO tmp_personalakte_import (
+          pers_nr, name_vorname, zeitarbeitsfirma, oe_der_person, schicht
+        , info, beginn_besch, ende_besch, eg, geschlecht, taetigkeit, team
+        , betriebsrat, einstellungsdatum, taetigkeit2, funktion, gebdatum
+        , lastinsertupdate, filedate
+    )
+    SELECT p.pers_nr, p.name_vorname, p.zeitarbeitsfirma, p.oe_der_person
+         , p.schicht, p.info, p.beginn_besch, p.ende_besch, p.eg, p.geschlecht
+         , p.taetigkeit, p.team, p.betriebsrat, p.einstellungsdatum
+         , p.taetigkeit2, p.funktion, p.gebdatum, p.lastinsertupdate, p.filedate
+      FROM (
+            SELECT source_row.*
+                 , ROW_NUMBER() OVER (
+                       PARTITION BY source_row.pers_nr
+                       ORDER BY (source_row.beginn_besch > p_snapshot_date)
+                              , CASE WHEN source_row.beginn_besch <= p_snapshot_date
+                                     THEN source_row.beginn_besch END DESC
+                              , CASE WHEN source_row.beginn_besch > p_snapshot_date
+                                     THEN source_row.beginn_besch END ASC
+                              , source_row.ende_besch DESC
+                              , source_row.name_vorname
+                              , source_row.zeitarbeitsfirma
+                              , source_row.oe_der_person
+                              , source_row.schicht
+                              , source_row.info
+                              , source_row.eg
+                              , source_row.geschlecht
+                              , source_row.taetigkeit
+                              , source_row.team
+                              , source_row.betriebsrat
+                              , source_row.einstellungsdatum
+                              , source_row.taetigkeit2
+                              , source_row.funktion
+                              , source_row.gebdatum
+                              , source_row.lastinsertupdate DESC
+                   ) AS tenure_rank
+              FROM tmp_personalakte_import_raw source_row
+             WHERE source_row.ende_besch IS NOT NULL
+               AND source_row.ende_besch <> '2022-07-31'
+               AND source_row.beginn_besch BETWEEN '2000-01-01' AND '9999-12-31'
+           ) p
+     WHERE p.tenure_rank = 1;
 
     SELECT MAX(datum) INTO var_maxdate FROM tbl_datum;
 
@@ -173,4 +247,5 @@ SQL SECURITY DEFINER BEGIN
            SET n.oe = current_state.oe
          WHERE n.oe = '';
     END IF;
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import_raw;
 END//

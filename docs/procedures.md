@@ -66,6 +66,11 @@ normalized snapshot intervals and serving SCD from the transform output. It
 does not copy the normalization rules or write the historical rows into the
 current materialized Personalakte table.
 
+When a raw export has multiple tenure rows for one PersNr, the shared transform
+selects the latest `beginn_besch` on or before that snapshot date. It retains
+the previous tenure before the new start. If different source rows share the
+same PersNr and `beginn_besch`, it raises an error for review.
+
 For each current file, `proc_uebertrag_personalakte` records the raw import,
 uses the shared transform, updates `tbl_ueb_personalakte` and the normalized
 snapshot intervals, then calls `proc_ueb_personalakte_scd_reconcile()`.

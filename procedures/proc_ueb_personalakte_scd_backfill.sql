@@ -108,6 +108,7 @@ SQL SECURITY DEFINER BEGIN
     END LOOP;
     CLOSE snapshot_dates;
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import_raw;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_normalized;
     CALL proc_ueb_personalakte_scd_reconcile();

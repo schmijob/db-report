@@ -268,6 +268,7 @@ SQL SECURITY DEFINER BEGIN
 		CALL proc_ueb_fz_geister_loeschen();
 			 	
 	END IF;
+    DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import_raw;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_import;
     DROP TEMPORARY TABLE IF EXISTS tmp_personalakte_normalized;
 END//

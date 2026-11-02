@@ -37,18 +37,6 @@ SQL SECURITY DEFINER BEGIN
 
         SELECT COUNT(*) INTO var_bad_rows
           FROM (
-                SELECT DATE(filedate), pers_nr
-                  FROM tbl_import_personalakte_scd_backfill
-                 GROUP BY DATE(filedate), pers_nr
-                HAVING COUNT(*) > 1
-          ) duplicate_people;
-        IF var_bad_rows > 0 THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'A staged raw snapshot has duplicate personnel numbers';
-        END IF;
-
-        SELECT COUNT(*) INTO var_bad_rows
-          FROM (
                 SELECT DATE(filedate)
                   FROM tbl_import_personalakte_scd_backfill
                  GROUP BY DATE(filedate)

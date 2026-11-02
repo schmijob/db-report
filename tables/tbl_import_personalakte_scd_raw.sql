@@ -4,7 +4,10 @@ CREATE TABLE IF NOT EXISTS `tbl_import_personalakte_scd_raw` AS
 SELECT * FROM `tbl_import_personalakte` WHERE 1 = 0;
 
 ALTER TABLE `tbl_import_personalakte_scd_raw`
+  ADD COLUMN `row_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  ADD COLUMN `duplicate_ordinal` int unsigned NOT NULL,
   ADD COLUMN `gueltig_von` date NOT NULL,
   ADD COLUMN `gueltig_bis` date NOT NULL,
-  ADD PRIMARY KEY (`pers_nr`, `gueltig_von`),
+  ADD KEY `ix_personalakte_scd_raw_identity`
+    (`pers_nr`, `row_hash`, `duplicate_ordinal`, `gueltig_von`),
   ADD KEY `ix_personalakte_scd_raw_validity` (`gueltig_von`, `gueltig_bis`, `pers_nr`);

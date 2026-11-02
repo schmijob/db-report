@@ -11,6 +11,15 @@ columns as imported, before Personalakte normalization, and stores only state
 changes with inclusive `gueltig_von` / `gueltig_bis` ranges. Export dates are
 kept separately so unchanged raw rows can be reconstructed for every file.
 
+To export the email attachments from Outlook, import
+`scripts/export_personalliste_attachments.bas` into Outlook VBA and run
+`ExportPersonalListeAttachments`. It scans the `Inbox/Zeus` folder for messages
+received since 2022-01-01 from `saasmail@isgus.de` or `noreply@isgus.cloud`,
+then saves matching `Personalliste ALL*.csv` attachments to
+`C:\db-report\.worktrees\personalakte-backfill\raw`. The macro source is
+versioned in this repository; the exported files contain personal data and
+remain in the ignored `.worktrees` directory.
+
 To prepare the email exports, run:
 
 ```powershell
@@ -41,3 +50,11 @@ reconciliation evidence tables. It does not create or rewrite the raw import
 history objects from `20261028_personalakte_raw_history.sql`. The cutover
 procedures normalize the durable raw history and maintain the current transfer
 from the same transformation worker.
+
+## `20261102_personalakte_raw_duplicate_rows.sql`
+
+Upgrades the raw SCD to retain multiple source rows with the same PersNr in one
+snapshot. It removes the PersNr-based primary key and adds a non-unique source
+row hash plus duplicate ordinal so unchanged row occurrences can still be
+compacted into validity intervals. The source values remain unchanged; the hash
+and ordinal are internal comparison aids.

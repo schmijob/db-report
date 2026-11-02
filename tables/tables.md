@@ -40,6 +40,11 @@ meaning and approved usage in `docs/architecture/`.
   coverage comes from staged CSV exports; dates before the earliest staged
   export must not be assumed to have a known state. After cutover, the normal
   Personalakte transfer keeps the latest interval current.
+- **Repeated PersNr in one export:** raw history retains every tenure row. The
+  normalized transform chooses the latest employment start at or before the
+  snapshot date; before that start, the previous tenure remains selected. If
+  distinct rows for one PersNr share the same employment start, the transform
+  stops for review instead of choosing arbitrarily.
 
 ## `tbl_ueb_personalakte_scd_snapshot`
 
@@ -70,16 +75,24 @@ meaning and approved usage in `docs/architecture/`.
 
 ## Raw Personalakte import history
 
-- `tbl_import_personalakte_scd_backfill` is the isolated upload target for
-  historical source exports. Non-unique indexes allow each PersNr to appear in
-  many files; it does not replace current-only `tbl_import_personalakte`.
-- `tbl_import_personalakte_scd_raw` stores raw source fields as one row per
-  person per maximal unchanged source interval. No Personalakte translation,
-  cleanup, or business rules are applied to these values.
-- `tbl_import_personalakte_scd_dates` keeps every Druckdatum date, even when no
-  person's raw values changed. Together, these tables reconstruct a complete
-  raw import snapshot for each export date without storing one row per person
-  per day.
+- `tbl_import_personalakte_scd_backfill` is the isolated bulk-upload target for
+  dated source exports. Its columns mirror `tbl_import_personalakte`; its
+  indexes are non-unique so the same PersNr can occur multiple times in one
+  export and in many exports.
+- `tbl_import_personalakte_scd_raw` stores every raw source field and one row
+  per source-row occurrence per maximal unchanged interval. Multiple rows may
+  share a PersNr and validity start. `row_hash` and `duplicate_ordinal`
+  identify equal row occurrences for interval comparison; neither is unique.
+  No normalization rules are applied here.
+- `tbl_import_personalakte_scd_dates` stores each export's Druckdatum date and
+  timestamp, including dates where no person's raw fields changed. It allows
+  downstream transformations to reconstruct a complete source snapshot for
+  any export date without storing a row per person per day.
+
+`proc_uebertrag_personalakte_raw_scd(1)` rebuilds raw history from the staging
+table; `(0)` appends one current import snapshot. Both paths write only to the
+raw-history tables. Keep the staging rows until the raw history has been
+reviewed and copied to sanitized LOCAL.
 
 The preparation migration adds only these raw-history objects. The later
 cutover migration and procedures build normalized history from this raw layer.
