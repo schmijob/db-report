@@ -42,3 +42,11 @@ export-date tables; it does not run any Personalakte business transformations
 or write to existing tables. Keep the staging rows until the raw history has
 been reviewed and copied to sanitized LOCAL. The downstream normalized SCD
 rebuild belongs to the separate cutover change.
+
+## `20261102_personalakte_raw_duplicate_rows.sql`
+
+Upgrades the raw SCD to retain multiple source rows with the same PersNr in one
+snapshot. It removes the PersNr-based primary key and adds a non-unique source
+row hash plus duplicate ordinal so unchanged row occurrences can still be
+compacted into validity intervals. The source values remain unchanged; the hash
+and ordinal are internal comparison aids.

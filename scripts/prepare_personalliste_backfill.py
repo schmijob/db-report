@@ -281,7 +281,6 @@ def normalized_data_rows(
         lastinsertupdate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     width = len(report.rows[report.header_index])
     person_index = report.header_indices.get("pers_nr")
-    seen: set[int] = set()
     normalized_rows: list[list[str | int | None]] = []
     source_row_count = 0
     skipped_null_persnr = 0
@@ -310,10 +309,6 @@ def normalized_data_rows(
         if person_number is None:
             skipped_null_persnr += 1
             continue
-        if person_number in seen:
-            raise ReportError(f"{path.name}: duplicate PersNr. on CSV row {row_index + 1}")
-        seen.add(person_number)
-
         values: dict[str, str | int | None] = {}
         for column in DB_COLUMNS:
             source_index = report.header_indices.get(column)
@@ -554,7 +549,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.structure_only:
             print("Headers, Druckdatum, and row widths checked; cell values were not checked; footer excluded")
         else:
-            print("Row widths, PersNr. header, dates, and duplicate nonblank PersNr. values checked; footer excluded")
+            print("Row widths, PersNr. values, dates, and footer checked; duplicate PersNr. rows are retained")
         if args.validate_only:
             print("Validation only; no prepared file was written.")
         else:
