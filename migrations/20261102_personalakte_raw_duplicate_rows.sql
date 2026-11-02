@@ -17,4 +17,7 @@ ALTER TABLE `tbl_import_personalakte_scd_raw`
   MODIFY COLUMN `row_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   MODIFY COLUMN `duplicate_ordinal` int unsigned NOT NULL,
   ADD KEY `ix_personalakte_scd_raw_identity`
-    (`pers_nr`, `row_hash`, `duplicate_ordinal`, `gueltig_von`);
+    (`pers_nr`, `row_hash`, `duplicate_ordinal`, `gueltig_von`),
+  ADD CONSTRAINT `fk_personalakte_scd_raw_start_date`
+    FOREIGN KEY (`gueltig_von`)
+    REFERENCES `tbl_import_personalakte_scd_dates` (`snapshot_date`);

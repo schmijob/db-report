@@ -10,4 +10,7 @@ ALTER TABLE `tbl_import_personalakte_scd_raw`
   ADD COLUMN `gueltig_bis` date NOT NULL,
   ADD KEY `ix_personalakte_scd_raw_identity`
     (`pers_nr`, `row_hash`, `duplicate_ordinal`, `gueltig_von`),
-  ADD KEY `ix_personalakte_scd_raw_validity` (`gueltig_von`, `gueltig_bis`, `pers_nr`);
+  ADD KEY `ix_personalakte_scd_raw_validity` (`gueltig_von`, `gueltig_bis`, `pers_nr`),
+  ADD CONSTRAINT `fk_personalakte_scd_raw_start_date`
+    FOREIGN KEY (`gueltig_von`)
+    REFERENCES `tbl_import_personalakte_scd_dates` (`snapshot_date`);
