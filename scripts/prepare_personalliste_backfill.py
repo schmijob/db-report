@@ -232,7 +232,9 @@ def find_footer_index(rows: list[list[str]], header_index: int) -> int:
     for row_index in range(header_index + 1, len(rows)):
         row = rows[row_index]
         for index, cell in enumerate(row):
-            if normalize_label(cell).startswith(("anzahl personen", "number of persons")):
+            if normalize_label(cell).startswith(
+                ("anzahl personen", "number of persons", "no of employees")
+            ):
                 return row_index
     return len(rows)
 
