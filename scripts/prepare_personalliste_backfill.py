@@ -12,6 +12,7 @@ import argparse
 import csv
 import hashlib
 import io
+import itertools
 import os
 import re
 import sys
@@ -108,14 +109,13 @@ class ReportError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass
 class Snapshot:
     path: Path
     printed_at: datetime
-    sha256: str
-    row_count: int
-    source_row_count: int
-    skipped_null_persnr: int = 0
+    size: int
+    mtime_ns: int
+    sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,11 +158,7 @@ def find_header(rows: list[list[str]]) -> tuple[int, dict[str, int]] | None:
     return None
 
 
-def load_rows_and_header(
-    path: Path, text: str | None = None
-) -> tuple[list[list[str]], int, dict[str, int], str]:
-    if text is None:
-        text = decode_report(path)
+def delimiter_candidates(text: str) -> list[str]:
     delimiters: list[str] = []
     try:
         sniffed = csv.Sniffer().sniff(text[:65536], delimiters=";,\t").delimiter
@@ -172,10 +168,17 @@ def load_rows_and_header(
     for delimiter in (";", "\t", ","):
         if delimiter not in delimiters:
             delimiters.append(delimiter)
+    return delimiters
 
+
+def load_header_preview(
+    path: Path, text: str
+) -> tuple[list[list[str]], int, dict[str, int], str]:
     candidates = []
-    for delimiter in delimiters:
-        rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delimiter))
+    for delimiter in delimiter_candidates(text):
+        rows = list(itertools.islice(
+            csv.reader(io.StringIO(text, newline=""), delimiter=delimiter), 40
+        ))
         match = find_header(rows)
         if match is None:
             continue
@@ -189,6 +192,20 @@ def load_rows_and_header(
         raise ReportError(f"{path.name}: couldn't find a report header with recognized field labels")
     candidates.sort(key=lambda item: item[0], reverse=True)
     _, rows, header_index, header_indices, delimiter = candidates[0]
+    return rows, header_index, header_indices, delimiter
+
+
+def load_rows_and_header(
+    path: Path, text: str | None = None
+) -> tuple[list[list[str]], int, dict[str, int], str]:
+    if text is None:
+        text = decode_report(path)
+    _, _, _, delimiter = load_header_preview(path, text[:65536])
+    rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delimiter))
+    match = find_header(rows)
+    if match is None:
+        raise ReportError(f"{path.name}: couldn't find a report header with recognized field labels")
+    header_index, header_indices = match
     return rows, header_index, header_indices, delimiter
 
 
@@ -353,36 +370,45 @@ def parse_report(
     return report, normalized_rows, source_row_count, skipped_null_persnr
 
 
-def inspect_snapshot(path: Path, structure_only: bool = False) -> Snapshot:
-    raw = path.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
-    text = decode_report_bytes(raw, path)
-    if structure_only:
-        rows, header_index, header_indices, delimiter = load_rows_and_header(path, text)
+def file_signature(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns
+
+
+def inspect_snapshot(path: Path) -> Snapshot:
+    before = file_signature(path)
+    with path.open("rb") as source:
+        prefix = source.read(65536)
+    text = decode_report_bytes(prefix, path)
+    try:
+        rows, header_index, _, _ = load_header_preview(path, text)
         printed_at = parse_printed_at(rows, header_index, path)
-        footer_index = find_footer_index(rows, header_index)
-        report = ParsedReport(
-            printed_at=printed_at,
-            rows=rows,
-            header_index=header_index,
-            footer_index=footer_index,
-            header_indices=header_indices,
-            delimiter=delimiter,
-        )
-        row_count = structural_data_row_count(report, path)
-        source_row_count = row_count
-        skipped_null_persnr = 0
-    else:
-        report, normalized_rows, source_row_count, skipped_null_persnr = parse_report(path, text)
-        row_count = len(normalized_rows)
-    return Snapshot(
-        path=path,
-        printed_at=printed_at if structure_only else report.printed_at,
-        sha256=digest,
-        row_count=row_count,
-        source_row_count=source_row_count,
-        skipped_null_persnr=skipped_null_persnr,
-    )
+    except (ReportError, csv.Error):
+        # A short prefix should be enough for the report header. Fall back to
+        # the full file for unusual encodings or headers near the prefix edge.
+        if len(prefix) >= before[0]:
+            raise
+        raw = path.read_bytes()
+        text = decode_report_bytes(raw, path)
+        rows, header_index, _, _ = load_header_preview(path, text)
+        printed_at = parse_printed_at(rows, header_index, path)
+    after = file_signature(path)
+    if before != after:
+        raise ReportError(f"{path.name}: file changed while reading its Druckdatum; rerun preprocessing")
+    return Snapshot(path=path, printed_at=printed_at, size=after[0], mtime_ns=after[1])
+
+
+def sha256_file(snapshot: Snapshot) -> str:
+    before = file_signature(snapshot.path)
+    if before != (snapshot.size, snapshot.mtime_ns):
+        raise ReportError(f"{snapshot.path.name}: file changed after inspection; rerun preprocessing")
+    digest = hashlib.sha256()
+    with snapshot.path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if file_signature(snapshot.path) != before:
+        raise ReportError(f"{snapshot.path.name}: file changed while checking duplicates; rerun preprocessing")
+    return digest.hexdigest()
 
 
 def choose_snapshots(snapshots: list[Snapshot], latest_per_day: bool) -> tuple[list[Snapshot], int]:
@@ -395,6 +421,8 @@ def choose_snapshots(snapshots: list[Snapshot], latest_per_day: bool) -> tuple[l
     for day, group in sorted(by_day.items()):
         unique: dict[str, Snapshot] = {}
         for snapshot in group:
+            if snapshot.sha256 is None:
+                snapshot.sha256 = sha256_file(snapshot)
             unique.setdefault(snapshot.sha256, snapshot)
         group = list(unique.values())
         dropped += len(by_day[day]) - len(group)
@@ -432,43 +460,89 @@ def ensure_output_in_untracked_area(output: Path) -> None:
         )
 
 
-def write_prepared_file(snapshots: list[Snapshot], output: Path) -> int:
-    ensure_output_in_untracked_area(output)
-    if output.resolve() in {snapshot.path.resolve() for snapshot in snapshots}:
-        raise ReportError("Output path matches an input CSV; choose a separate TSV path")
-    output.parent.mkdir(parents=True, exist_ok=True)
+def process_selected_snapshots(
+    snapshots: list[Snapshot], output: Path | None, structure_only: bool = False
+) -> tuple[int, int, int]:
+    if output is not None:
+        ensure_output_in_untracked_area(output)
+        if output.resolve() in {snapshot.path.resolve() for snapshot in snapshots}:
+            raise ReportError("Output path matches an input CSV; choose a separate TSV path")
+        output.parent.mkdir(parents=True, exist_ok=True)
+
     temp_path: Path | None = None
+    temp = None
     total_rows = 0
+    total_source_rows = 0
+    total_skipped_null_persnr = 0
     prepared_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="",
-            dir=output.parent,
-            prefix=output.name + ".",
-            suffix=".partial",
-            delete=False,
-        ) as temp:
+        if output is not None:
+            temp = tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="",
+                dir=output.parent,
+                prefix=output.name + ".",
+                suffix=".partial",
+                delete=False,
+            )
             temp_path = Path(temp.name)
             # Emit MariaDB LOAD DATA LOCAL INFILE escaped TSV. In particular,
             # a SQL NULL is the unescaped two-character token ``\N``. A CSV
             # writer would escape that backslash and turn it into literal text.
             temp.write("\t".join(DB_COLUMNS) + "\n")
-            for snapshot in snapshots:
-                raw = snapshot.path.read_bytes()
-                if hashlib.sha256(raw).hexdigest() != snapshot.sha256:
-                    raise ReportError(
-                        f"{snapshot.path.name}: file changed after validation; rerun preprocessing"
-                    )
-                text = decode_report_bytes(raw, snapshot.path)
-                _, rows, _, _ = parse_report(snapshot.path, text, prepared_at)
-                for row in rows:
+
+        for snapshot in snapshots:
+            before = file_signature(snapshot.path)
+            if before != (snapshot.size, snapshot.mtime_ns):
+                raise ReportError(f"{snapshot.path.name}: file changed after inspection; rerun preprocessing")
+            raw = snapshot.path.read_bytes()
+            if file_signature(snapshot.path) != before:
+                raise ReportError(f"{snapshot.path.name}: file changed while reading; rerun preprocessing")
+            if snapshot.sha256 is not None and hashlib.sha256(raw).hexdigest() != snapshot.sha256:
+                raise ReportError(f"{snapshot.path.name}: file changed after duplicate checking; rerun preprocessing")
+            text = decode_report_bytes(raw, snapshot.path)
+
+            if structure_only:
+                rows, header_index, header_indices, delimiter = load_rows_and_header(snapshot.path, text)
+                printed_at = parse_printed_at(rows, header_index, snapshot.path)
+                footer_index = find_footer_index(rows, header_index)
+                report = ParsedReport(
+                    printed_at=printed_at,
+                    rows=rows,
+                    header_index=header_index,
+                    footer_index=footer_index,
+                    header_indices=header_indices,
+                    delimiter=delimiter,
+                )
+                source_row_count = structural_data_row_count(report, snapshot.path)
+                rows_to_write: list[list[str | int | None]] = []
+                skipped_null_persnr = 0
+            else:
+                report, rows_to_write, source_row_count, skipped_null_persnr = parse_report(
+                    snapshot.path, text, prepared_at
+                )
+
+            if report.printed_at != snapshot.printed_at:
+                raise ReportError(f"{snapshot.path.name}: Druckdatum changed after inspection; rerun preprocessing")
+            if structure_only:
+                total_rows += source_row_count
+            else:
+                total_rows += len(rows_to_write)
+            total_source_rows += source_row_count
+            total_skipped_null_persnr += skipped_null_persnr
+
+            if temp is not None:
+                for row in rows_to_write:
                     temp.write("\t".join(escape_load_data(value) for value in row) + "\n")
-                total_rows += len(rows)
-        os.replace(temp_path, output)
-        return total_rows
+
+        if temp is not None:
+            temp.close()
+            os.replace(temp_path, output)
+        return total_rows, total_source_rows, total_skipped_null_persnr
     except Exception:
+        if temp is not None:
+            temp.close()
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
         raise
@@ -502,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--validate-only",
         action="store_true",
-        help="Validate all files and report aggregate counts without writing output",
+        help="Validate the selected snapshots and report aggregate counts without writing output",
     )
     parser.add_argument(
         "--structure-only",
@@ -523,20 +597,18 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--structure-only can only be used with --validate-only")
 
     try:
-        snapshots = [inspect_snapshot(path, structure_only=args.structure_only) for path in files]
+        snapshots = [inspect_snapshot(path) for path in files]
         selected, dropped = choose_snapshots(snapshots, args.latest_per_day)
-        total_rows = sum(snapshot.row_count for snapshot in selected)
-        total_source_rows = sum(snapshot.source_row_count for snapshot in selected)
-        skipped_null_persnr = sum(snapshot.skipped_null_persnr for snapshot in selected)
         output = args.output or args.input_dir.parent / "prepared_personalakte_backfill.tsv"
-        if not args.validate_only:
-            written_rows = write_prepared_file(selected, output)
-            if written_rows != total_rows:
-                raise ReportError("file changed between validation and conversion; rerun preprocessing")
+        total_rows, total_source_rows, skipped_null_persnr = process_selected_snapshots(
+            selected,
+            None if args.validate_only else output,
+            structure_only=args.structure_only,
+        )
 
         first_date = selected[0].printed_at.date().isoformat()
         last_date = selected[-1].printed_at.date().isoformat()
-        print(f"Raw CSV files checked: {len(files)}")
+        print(f"Raw CSV files inspected: {len(files)}")
         print(f"Snapshots selected: {len(selected)}")
         print(f"Exact duplicates or superseded same-day files: {dropped}")
         if args.structure_only:
