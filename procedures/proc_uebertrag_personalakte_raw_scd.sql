@@ -48,7 +48,7 @@ SQL SECURITY DEFINER BEGIN
         END IF;
 
         TRUNCATE TABLE tbl_import_personalakte_scd_raw;
-        TRUNCATE TABLE tbl_import_personalakte_scd_dates;
+        DELETE FROM tbl_import_personalakte_scd_dates;
 
         OPEN snapshot_dates;
         snapshot_loop: LOOP

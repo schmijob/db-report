@@ -83,7 +83,8 @@ meaning and approved usage in `docs/architecture/`.
   per source-row occurrence per maximal unchanged interval. Multiple rows may
   share a PersNr and validity start. `row_hash` and `duplicate_ordinal`
   identify equal row occurrences for interval comparison; neither is unique.
-  No normalization rules are applied here.
+  `gueltig_von` references the export date table. No normalization rules are
+  applied here.
 - `tbl_import_personalakte_scd_dates` stores each export's Druckdatum date and
   timestamp, including dates where no person's raw fields changed. It allows
   downstream transformations to reconstruct a complete source snapshot for

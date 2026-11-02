@@ -57,4 +57,5 @@ Upgrades the raw SCD to retain multiple source rows with the same PersNr in one
 snapshot. It removes the PersNr-based primary key and adds a non-unique source
 row hash plus duplicate ordinal so unchanged row occurrences can still be
 compacted into validity intervals. The source values remain unchanged; the hash
-and ordinal are internal comparison aids.
+and ordinal are internal comparison aids. `gueltig_von` references the export
+date table; no unique constraint is applied to source-row identity.
