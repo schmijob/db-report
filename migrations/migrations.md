@@ -11,6 +11,15 @@ columns as imported, before Personalakte normalization, and stores only state
 changes with inclusive `gueltig_von` / `gueltig_bis` ranges. Export dates are
 kept separately so unchanged raw rows can be reconstructed for every file.
 
+To export the email attachments from Outlook, import
+`scripts/export_personalliste_attachments.bas` into Outlook VBA and run
+`ExportPersonalListeAttachments`. It scans the `Inbox/Zeus` folder for messages
+received since 2022-01-01 from `saasmail@isgus.de` or `noreply@isgus.cloud`,
+then saves matching `Personalliste ALL*.csv` attachments to
+`C:\db-report\.worktrees\personalakte-backfill\raw`. The macro source is
+versioned in this repository; the exported files contain personal data and
+remain in the ignored `.worktrees` directory.
+
 To prepare the email exports, run:
 
 ```powershell
