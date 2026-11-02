@@ -200,7 +200,13 @@ def load_rows_and_header(
 ) -> tuple[list[list[str]], int, dict[str, int], str]:
     if text is None:
         text = decode_report(path)
-    _, _, _, delimiter = load_header_preview(path, text[:65536])
+    preview = text[:65536]
+    try:
+        _, _, _, delimiter = load_header_preview(path, preview)
+    except (ReportError, csv.Error):
+        if len(preview) >= len(text):
+            raise
+        _, _, _, delimiter = load_header_preview(path, text)
     rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delimiter))
     match = find_header(rows)
     if match is None:
@@ -621,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.structure_only:
             print("Headers, Druckdatum, and row widths checked; cell values were not checked; footer excluded")
         else:
-            print("Row widths, PersNr. values, dates, and footer checked; duplicate PersNr. rows are retained")
+            print("Selected snapshots: row widths, PersNr. values, dates, and footer checked; duplicate PersNr. rows are retained")
         if args.validate_only:
             print("Validation only; no prepared file was written.")
         else:
