@@ -1,4 +1,4 @@
--- Isolated staging and compact, untransformed import history.
+-- Isolated import staging and compact, untransformed source history.
 -- Existing import, transfer, and consumer objects are not changed.
 -- Source-row identity is non-unique so one PersNr may have multiple rows in
 -- the same export, including identical repeated rows.

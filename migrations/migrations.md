@@ -5,8 +5,8 @@ upgrade or rollback step. Keep deployment tooling in `db-workbench`.
 
 ## `20261028_personalakte_raw_history.sql`
 
-Creates the historical upload table, the compact raw import SCD, and a small
-table of export dates. It adds new objects only. The raw SCD retains source
+Creates the historical upload table, compact raw source-history tables, and a
+small table of export dates. It adds new objects only. The raw SCD retains source
 columns as imported, before Personalakte normalization, and stores only state
 changes with inclusive `gueltig_von` / `gueltig_bis` ranges. It has no primary
 or unique key on PersNr or source-row identity; `row_hash` and

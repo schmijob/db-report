@@ -1,5 +1,5 @@
 -- Managed by db-workbench; source of truth: db-report/procedures/proc_uebertrag_personalakte_raw_snapshot.sql
--- Store one dated raw import as compact, untransformed source-row intervals.
+-- Persist one dated source snapshot as compact raw-row intervals.
 DROP PROCEDURE IF EXISTS `proc_uebertrag_personalakte_raw_snapshot`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte_raw_snapshot`(
     IN p_snapshot_date DATE,

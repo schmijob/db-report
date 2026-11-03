@@ -3,7 +3,7 @@
 Table definitions and table-specific documentation belong here. Keep business
 meaning and approved usage in `docs/architecture/`.
 
-## Raw Personalakte import history
+## Personalakte backfill and raw history
 
 - `tbl_import_personalakte_scd_backfill` is the isolated bulk-upload target for
   dated source exports. Its columns mirror `tbl_import_personalakte`; its

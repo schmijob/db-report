@@ -1,5 +1,5 @@
 -- Managed by db-workbench; source of truth: db-report/procedures/proc_uebertrag_personalakte_raw_scd.sql
--- Rebuild raw import history from staged exports, or append the current import.
+-- Rebuild raw source history from staged exports, or append the current import.
 DROP PROCEDURE IF EXISTS `proc_uebertrag_personalakte_raw_scd`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte_raw_scd`(
     IN p_rebuild_from_backfill TINYINT
