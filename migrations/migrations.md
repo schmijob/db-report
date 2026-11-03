@@ -2,3 +2,48 @@
 
 Versioned database migrations belong here when a schema change needs an ordered
 upgrade or rollback step. Keep deployment tooling in `db-workbench`.
+
+## `20261028_personalakte_raw_history.sql`
+
+Creates the historical upload table, compact raw source-history tables, and a
+small table of export dates. It adds new objects only. The raw SCD retains source
+columns as imported, before Personalakte normalization, and stores only state
+changes with inclusive `gueltig_von` / `gueltig_bis` ranges. It has no primary
+or unique key on PersNr or source-row identity; `row_hash` and
+`duplicate_ordinal` preserve repeated rows. Export dates are kept separately
+so unchanged raw rows can be reconstructed for every file, and raw interval
+starts reference that date table.
+
+To export the email attachments from Outlook, import
+`scripts/export_personalliste_attachments.bas` into Outlook VBA and run
+`ExportPersonalListeAttachments`. It scans the `Inbox/Zeus` folder for messages
+received since 2022-01-01 from `saasmail@isgus.de` or `noreply@isgus.cloud`,
+then saves matching `Personalliste ALL*.csv` attachments to
+`C:\db-report\.worktrees\personalakte-backfill\raw`. The macro source is
+versioned in this repository; the exported files contain personal data and
+remain in the ignored `.worktrees` directory.
+
+To prepare the email exports, run:
+
+```powershell
+python scripts/prepare_personalliste_backfill.py `
+  C:\db-report\.worktrees\personalakte-backfill\raw --validate-only
+```
+
+Then run it with `--output <path>` under `.worktrees` or `consumers` to produce
+one consolidated TSV for bulk upload. The parser first inspects headers and
+`Druckdatum` to select one export per day, then fully validates and normalizes
+each selected export once. It matches labels while preserving empty separator
+columns. Every field header can be absent; missing fields are emitted as SQL
+`NULL`. Blank PersNr rows are discarded. If a file has no PersNr column, its
+people rows are discarded because they cannot be identified. The footer row
+is ignored. `Druckdatum` supplies `filedate`, and `lastinsertupdate` is the
+preparation timestamp. Use `--structure-only --validate-only` to check layout
+without validating values.
+
+After loading the TSV into `tbl_import_personalakte_scd_backfill`, call
+`proc_uebertrag_personalakte_raw_scd(1)` once. It rebuilds only the raw SCD and
+export-date tables; it does not run any Personalakte business transformations
+or write to existing tables. Keep the staging rows until the raw history has
+been reviewed and copied to sanitized LOCAL. The downstream normalized SCD
+rebuild belongs to the separate cutover change.
