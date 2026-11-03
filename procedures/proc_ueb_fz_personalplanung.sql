@@ -82,7 +82,8 @@ WITH fanf AS (
     FROM tbl_ueb_fz_buchungen b
     JOIN tbl_datum d ON b.datum = d.datum -- AND d.arbeitstag = 1
     LEFT JOIN tbl_schichten s ON b.Schicht = s.Schicht AND s.index <= 3
-    LEFT JOIN tbl_ueb_personalakte p ON b.PersNr = p.persnr
+    LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr_alt
+                                       AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
     LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
     LEFT JOIN tbl_ueb_fz_forecast f
            ON b.Datum = f.datum

@@ -11,57 +11,20 @@ DELETE FROM tbl_bm_funktionsgestellung WHERE monat BETWEEN @mindate AND @maxdate
 
 INSERT INTO tbl_bm_funktionsgestellung (monat, gruppe, malusfaktor, unterdeckung_sum, unterdeckung_avg, häufigkeit, malus)
 
-WITH datelist AS (
-	 SELECT datum 
-	   FROM tbl_datum d
-	   WHERE datum BETWEEN @mindate AND @maxdate
-)	   
-
-, aenderungen AS(
-     SELECT persnr, datum, aenderungsdatum, feld, wert, gueltig_von, gueltig_bis 
-       FROM tbl_uebertrag_aenderungen_werte 
-       JOIN datelist d ON d.datum BETWEEN gueltig_von AND gueltig_bis
-      WHERE beschreibung NOT LIKE ('(Gelöscht)%') AND feld IN ('Organisationseinheit der Person', 'Tätigkeit')
-
-     UNION ALL 
-
-     SELECT persnr, datum, aenderungsdatum, feld, wert, gueltig_von, gueltig_bis 
-       FROM tbl_import_aenderung_grundzustand 
-       JOIN datelist d ON d.datum BETWEEN gueltig_von AND gueltig_bis
-      WHERE wert <> 'alle ausgeschiedenen MAInnen' AND feld IN ('Organisationseinheit der Person', 'Tätigkeit')
-)
-, changed_oe AS (
-    SELECT b.persnr
-         , b.datum
-         , b.wert
-         , ROW_NUMBER() OVER (PARTITION BY b.persnr, b.datum ORDER BY b.aenderungsdatum DESC) AS rn
-      FROM aenderungen b
-     WHERE b.feld = 'Organisationseinheit der Person'
-)
-, changed_taetigkeit AS (
-    SELECT b.persnr
-         , b.datum
-         , b.wert
-         , ROW_NUMBER() OVER (PARTITION BY b.persnr, b.datum ORDER BY b.aenderungsdatum DESC) AS rn
-      FROM aenderungen b
-     WHERE b.feld = 'Tätigkeit'
-)
-, anwesenheit AS (
+WITH anwesenheit AS (
 	SELECT b.datum
 		, b.schicht
-		, SUM(IFNULL(a.wert, oe) IN ('PRD', 'Leitstand', 'Trainer') AND IFNULL(t.wert, taetigkeit) NOT IN ('Schichtleiter', 'Trainingskoordinator', 'Qualifizierungskoordinator')) + IFNULL(v.prd, 0) AS `PRD/LS/Trainer`
-		, SUM(IFNULL(a.wert, oe) IN ('PRD', 'Leitstand', 'Trainer') AND IFNULL(t.wert, taetigkeit) = 'Teamleiter') AS `PRD/LS/Trainer_TL`
-		, SUM(IFNULL(a.wert, oe) IN ('WA', 'WE', 'BGL') AND IFNULL(t.wert, taetigkeit) <> 'Schichtleiter') + IFNULL(v.WA, 0) + IFNULL(v.WE, 0) + IFNULL(v.BGL, 0) - IFNULL(v.yard, 0) AS `WA/WE/BGL`
-		, SUM(IFNULL(a.wert, oe) IN ('WA', 'WE', 'BGL') AND IFNULL(t.wert, taetigkeit) = 'Teamleiter') AS `WA/WE/BGL_TL`
+		, SUM(p.oe IN ('PRD', 'Leitstand', 'Trainer') AND p.taetigkeit NOT IN ('Schichtleiter', 'Trainingskoordinator', 'Qualifizierungskoordinator')) + IFNULL(v.prd, 0) AS `PRD/LS/Trainer`
+		, SUM(p.oe IN ('PRD', 'Leitstand', 'Trainer') AND p.taetigkeit = 'Teamleiter') AS `PRD/LS/Trainer_TL`
+		, SUM(p.oe IN ('WA', 'WE', 'BGL') AND p.taetigkeit <> 'Schichtleiter') + IFNULL(v.WA, 0) + IFNULL(v.WE, 0) + IFNULL(v.BGL, 0) - IFNULL(v.yard, 0) AS `WA/WE/BGL`
+		, SUM(p.oe IN ('WA', 'WE', 'BGL') AND p.taetigkeit = 'Teamleiter') AS `WA/WE/BGL_TL`
 		, IFNULL(v.yard, 0) AS Yard
-		, SUM(IFNULL(a.wert, oe) = 'QS' AND IFNULL(t.wert, taetigkeit) <> 'Schichtleiter') + IFNULL(v.qs, 0) AS QS
-		, SUM(IFNULL(a.wert, oe) = 'QS' AND IFNULL(t.wert, taetigkeit) = 'Teamleiter') AS QS_TL
-		, SUM(IFNULL(t.wert, taetigkeit) IN ('Schichtleiter', 'Trainingskoordinator', 'Qualifizierungskoordinator')) AS Schichtleiter
+		, SUM(p.oe = 'QS' AND p.taetigkeit <> 'Schichtleiter') + IFNULL(v.qs, 0) AS QS
+		, SUM(p.oe = 'QS' AND p.taetigkeit = 'Teamleiter') AS QS_TL
+		, SUM(p.taetigkeit IN ('Schichtleiter', 'Trainingskoordinator', 'Qualifizierungskoordinator')) AS Schichtleiter
 	FROM tbl_ueb_fz_buchungen b	
-	LEFT JOIN tbl_ueb_personalakte p ON b.PersNr = p.persnr
+	LEFT JOIN tbl_ueb_personalakte_scd p ON b.PersNr = p.persnr_alt AND b.datum BETWEEN p.gueltig_von AND p.gueltig_bis
 	LEFT JOIN tbl_stamm_kategorie_abteilung k ON p.taetigkeit = k.`tätigkeit`
-	LEFT JOIN changed_oe a ON a.persnr = b.PersNr AND a.datum = b.datum AND a.rn = 1
-	LEFT JOIN changed_taetigkeit t ON t.persnr = b.PersNr AND t.datum = b.datum AND t.rn = 1
 	LEFT JOIN tbl_import_verschiebung v ON v.datum = b.datum AND v.schicht = b.schicht
   WHERE b.anwesenheit = 'anw'
 	 AND kategorie NOT IN ('admin', 'leitung (at)')

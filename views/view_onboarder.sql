@@ -1,0 +1,2 @@
+CREATE OR REPLACE VIEW `view_onboarder` AS
+select `p`.`persnr` AS `persnr`,`p`.`name` AS `name`,`p`.`pdl` AS `pdl`,`p`.`oe` AS `oe`,`p`.`schichtgruppe` AS `schichtgruppe`,`p`.`eg` AS `eg`,`p`.`beginn` AS `beginn`,`p`.`ende` AS `ende`,`p`.`taetigkeit` AS `taetigkeit`,`p`.`team` AS `team`,`p`.`br` AS `br`,`p`.`übernahme` AS `übernahme`,`p`.`last_insert_update` AS `last_insert_update`,`p`.`filedate` AS `filedate` from `tbl_ueb_personalakte_scd` `p` where yearweek(`p`.`beginn`,0) = yearweek(curdate(),0) and `p`.`beginn` between `p`.`gueltig_von` and `p`.`gueltig_bis`;
