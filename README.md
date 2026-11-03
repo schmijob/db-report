@@ -18,6 +18,10 @@ database's meaning, relationships, and known limitations.
 - [Triggers](triggers/triggers.md)
 - [Views](views/views.md)
 
+`db-workbench.json` contains this project's snapshot and privacy rules. Shared
+sensitive-column and date-column defaults live in db-workbench. User-specific
+PROD access and the LOCAL schema are kept in db-workbench's AppData config.
+
 For query commands and human-operated delivery steps, see
 `../db-workbench/README.md` and
 `../db-workbench/docs/skills/using-db-workbench.md` from the db-report checkout
