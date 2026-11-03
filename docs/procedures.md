@@ -54,9 +54,9 @@ repository's `AGENTS.md`.
 
 ## Personalakte SCD
 
-Build raw import history first with `proc_uebertrag_personalakte_raw_scd(1)`.
+Build raw source history first with `proc_uebertrag_personalakte_raw_scd(1)`.
 It stores untransformed source values in compact raw-state intervals and keeps
-each Druckdatum in `tbl_import_personalakte_scd_dates`.
+each Druckdatum in `tbl_uebertrag_personalakte_scd_dates`.
 
 `proc_uebertrag_personalakte_transform_snapshot` contains the shared
 normalization and business rules. `proc_uebertrag_personalakte` calls it for
@@ -75,7 +75,7 @@ For each current file, `proc_uebertrag_personalakte` records the raw import,
 uses the shared transform, updates `tbl_ueb_personalakte` and the normalized
 snapshot intervals, then calls `proc_ueb_personalakte_scd_reconcile()`.
 `proc_uebertrag_aenderungen` also rebuilds the SCD after refreshing the change
-log. The raw import SCD remains available to rebuild normalized history if
+log. The raw source SCD remains available to rebuild normalized history if
 these business rules change.
 
 The SCD uses canonical `persnr` across resolved PersNr changes and stores the

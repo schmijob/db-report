@@ -28,7 +28,7 @@ SQL SECURITY DEFINER BEGIN
 
     IF p_from_raw_history = 1 THEN
         SELECT d.filedate INTO var_filedate
-          FROM tbl_import_personalakte_scd_dates d
+          FROM tbl_uebertrag_personalakte_scd_dates d
          WHERE d.snapshot_date = p_snapshot_date;
 
         INSERT INTO tmp_personalakte_import_raw (
@@ -42,7 +42,7 @@ SQL SECURITY DEFINER BEGIN
              , r.taetigkeit, r.team, r.betriebsrat, r.einstellungsdatum
              , r.taetigkeit2, r.funktion, r.gebdatum, r.lastinsertupdate
              , var_filedate
-          FROM tbl_import_personalakte_scd_raw r
+          FROM tbl_uebertrag_personalakte_scd_raw r
          WHERE r.gueltig_von <= p_snapshot_date
            AND r.gueltig_bis >= p_snapshot_date;
     ELSE

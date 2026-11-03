@@ -8,12 +8,12 @@ SQL SECURITY DEFINER BEGIN
 
     DECLARE snapshot_dates CURSOR FOR
         SELECT snapshot_date
-          FROM tbl_import_personalakte_scd_dates
+          FROM tbl_uebertrag_personalakte_scd_dates
          ORDER BY snapshot_date;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET var_done = 1;
 
-    IF NOT EXISTS (SELECT 1 FROM tbl_import_personalakte_scd_dates)
-       OR NOT EXISTS (SELECT 1 FROM tbl_import_personalakte_scd_raw) THEN
+    IF NOT EXISTS (SELECT 1 FROM tbl_uebertrag_personalakte_scd_dates)
+       OR NOT EXISTS (SELECT 1 FROM tbl_uebertrag_personalakte_scd_raw) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Build the raw Personalakte SCD before normalized history';
     END IF;

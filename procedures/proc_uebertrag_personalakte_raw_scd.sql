@@ -1,5 +1,5 @@
 -- Managed by db-workbench; source of truth: db-report/procedures/proc_uebertrag_personalakte_raw_scd.sql
--- Rebuild raw import history from staged exports, or append the current import.
+-- Rebuild raw source history from staged exports, or append the current import.
 DROP PROCEDURE IF EXISTS `proc_uebertrag_personalakte_raw_scd`//
 CREATE DEFINER=CURRENT_USER PROCEDURE `proc_uebertrag_personalakte_raw_scd`(
     IN p_rebuild_from_backfill TINYINT
@@ -47,8 +47,8 @@ SQL SECURITY DEFINER BEGIN
                 SET MESSAGE_TEXT = 'Choose one Druckdatum export per calendar date before loading';
         END IF;
 
-        TRUNCATE TABLE tbl_import_personalakte_scd_raw;
-        DELETE FROM tbl_import_personalakte_scd_dates;
+        TRUNCATE TABLE tbl_uebertrag_personalakte_scd_raw;
+        DELETE FROM tbl_uebertrag_personalakte_scd_dates;
 
         OPEN snapshot_dates;
         snapshot_loop: LOOP
