@@ -1,4 +1,4 @@
-﻿# Database migrations
+# Database migrations
 
 Versioned database migrations belong here when a schema change needs an ordered
 upgrade or rollback step. Keep deployment tooling in `db-workbench`.
@@ -8,8 +8,11 @@ upgrade or rollback step. Keep deployment tooling in `db-workbench`.
 Creates the historical upload table, the compact raw import SCD, and a small
 table of export dates. It adds new objects only. The raw SCD retains source
 columns as imported, before Personalakte normalization, and stores only state
-changes with inclusive `gueltig_von` / `gueltig_bis` ranges. Export dates are
-kept separately so unchanged raw rows can be reconstructed for every file.
+changes with inclusive `gueltig_von` / `gueltig_bis` ranges. It has no primary
+or unique key on PersNr or source-row identity; `row_hash` and
+`duplicate_ordinal` preserve repeated rows. Export dates are kept separately
+so unchanged raw rows can be reconstructed for every file, and raw interval
+starts reference that date table.
 
 To export the email attachments from Outlook, import
 `scripts/export_personalliste_attachments.bas` into Outlook VBA and run
@@ -28,13 +31,15 @@ python scripts/prepare_personalliste_backfill.py `
 ```
 
 Then run it with `--output <path>` under `.worktrees` or `consumers` to produce
-one consolidated TSV for bulk upload. The parser matches labels while
-preserving empty separator columns. Every field header can be absent; missing
-fields are emitted as SQL `NULL`. Blank PersNr rows are discarded. If a file
-has no PersNr column, its people rows are discarded because they cannot be
-identified. The footer row is ignored. `Druckdatum` supplies `filedate`, and
-`lastinsertupdate` is the preparation timestamp. Use
-`--structure-only --validate-only` to check layout without validating values.
+one consolidated TSV for bulk upload. The parser first inspects headers and
+`Druckdatum` to select one export per day, then fully validates and normalizes
+each selected export once. It matches labels while preserving empty separator
+columns. Every field header can be absent; missing fields are emitted as SQL
+`NULL`. Blank PersNr rows are discarded. If a file has no PersNr column, its
+people rows are discarded because they cannot be identified. The footer row
+is ignored. `Druckdatum` supplies `filedate`, and `lastinsertupdate` is the
+preparation timestamp. Use `--structure-only --validate-only` to check layout
+without validating values.
 
 After loading the TSV into `tbl_import_personalakte_scd_backfill`, call
 `proc_uebertrag_personalakte_raw_scd(1)` once. It rebuilds only the raw SCD and
@@ -50,12 +55,3 @@ reconciliation evidence tables. It does not create or rewrite the raw import
 history objects from `20261028_personalakte_raw_history.sql`. The cutover
 procedures normalize the durable raw history and maintain the current transfer
 from the same transformation worker.
-
-## `20261102_personalakte_raw_duplicate_rows.sql`
-
-Upgrades the raw SCD to retain multiple source rows with the same PersNr in one
-snapshot. It removes the PersNr-based primary key and adds a non-unique source
-row hash plus duplicate ordinal so unchanged row occurrences can still be
-compacted into validity intervals. The source values remain unchanged; the hash
-and ordinal are internal comparison aids. `gueltig_von` references the export
-date table; no unique constraint is applied to source-row identity.
