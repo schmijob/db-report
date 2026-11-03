@@ -1,0 +1,76 @@
+{
+  "database": {
+    "engine": "mariadb",
+    "version": "10.11.18",
+    "charset": "utf8mb4"
+  },
+  "snapshot": {
+    "small_table_threshold_mib": 20,
+    "default_history_months": 12,
+    "future_months": 4,
+    "freshness_columns": [
+      "last_insert_update",
+      "lastinsertupdate",
+      "filedate"
+    ],
+    "regression_personnel": [
+      91789,
+      36101962,
+      36101671,
+      91823,
+      36104224,
+      91743,
+      36102005,
+      36102250,
+      7063,
+      93093,
+      36101742,
+      36103369,
+      36103371,
+      7122,
+      36101933,
+      90084,
+      7061
+    ],
+    "table_history_windows": {
+      "tbl_import_khdr": {"months": 6},
+      "tbl_import_khdr2": {"months": 6},
+      "tbl_uebertrag_khdr": {"months": 3},
+      "tbl_import_caps_rohdaten": {"months": 6},
+      "tbl_uebertrag_caps_rohdaten": {"days": 2},
+      "tbl_uebertrag_caps_rohdaten_2025": {"days": 2},
+      "tbl_uebertrag_nettoanw_aend_management": {"days": 2},
+      "tbl_check_procedurlauf": {"months": 6}
+    },
+    "initial_load_excluded_tables": [],
+    "full_copy_tables": [
+      "tbl_import_gesamtprotokoll",
+      "tbl_uebertrag_gesamtprotokoll"
+    ],
+    "excluded_table_prefixes": ["zz_sbx_"]
+  },
+  "pseudonymization": {
+    "non_person_name_columns": [
+      ["tbl_monate", "name"],
+      ["tbl_wochentag", "name"]
+    ],
+    "change_value_tables": [
+      "tbl_import_aenderungen",
+      "tbl_uebertrag_aenderungen",
+      "tbl_uebertrag_aenderungen_werte"
+    ],
+    "special_value_rules": {
+      "change_value": {
+        "selector_column": "feld",
+        "selector_values": ["Nachname", "Vorname"],
+        "value_column": "wert"
+      },
+      "changed_for": {
+        "column": "geaendert_fuer",
+        "contains": "]",
+        "tables": ["tbl_import_aenderungen"]
+      }
+    },
+    "person_key_columns": ["persnr", "pers_nr", "personalnummer"]
+  }
+}
