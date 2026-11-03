@@ -47,8 +47,8 @@ SQL SECURITY DEFINER BEGIN
                 SET MESSAGE_TEXT = 'Choose one Druckdatum export per calendar date before loading';
         END IF;
 
-        TRUNCATE TABLE tbl_import_personalakte_scd_raw;
-        DELETE FROM tbl_import_personalakte_scd_dates;
+        TRUNCATE TABLE tbl_uebertrag_personalakte_scd_raw;
+        DELETE FROM tbl_uebertrag_personalakte_scd_dates;
 
         OPEN snapshot_dates;
         snapshot_loop: LOOP

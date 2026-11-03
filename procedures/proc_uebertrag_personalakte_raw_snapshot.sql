@@ -69,7 +69,7 @@ SQL SECURITY DEFINER BEGIN
 
     SELECT MAX(filedate) INTO var_filedate FROM tmp_pa_raw_import;
     SELECT MAX(snapshot_date) INTO var_latest_date
-      FROM tbl_import_personalakte_scd_dates;
+      FROM tbl_uebertrag_personalakte_scd_dates;
 
     IF var_latest_date > p_snapshot_date THEN
         SIGNAL SQLSTATE '45000'
@@ -80,14 +80,14 @@ SQL SECURITY DEFINER BEGIN
     -- intervals by source-row identity, including the duplicate occurrence.
     IF EXISTS (
         SELECT 1
-          FROM tbl_import_personalakte_scd_dates
+          FROM tbl_uebertrag_personalakte_scd_dates
          WHERE snapshot_date = p_snapshot_date
     ) THEN
-        DELETE FROM tbl_import_personalakte_scd_raw
+        DELETE FROM tbl_uebertrag_personalakte_scd_raw
          WHERE gueltig_von = p_snapshot_date;
 
-        UPDATE tbl_import_personalakte_scd_raw r
-        LEFT JOIN tbl_import_personalakte_scd_raw later_state
+        UPDATE tbl_uebertrag_personalakte_scd_raw r
+        LEFT JOIN tbl_uebertrag_personalakte_scd_raw later_state
           ON later_state.pers_nr = r.pers_nr
          AND later_state.row_hash = r.row_hash
          AND later_state.duplicate_ordinal = r.duplicate_ordinal
@@ -97,15 +97,15 @@ SQL SECURITY DEFINER BEGIN
            AND r.gueltig_von < p_snapshot_date
            AND later_state.pers_nr IS NULL;
 
-        DELETE FROM tbl_import_personalakte_scd_dates
+        DELETE FROM tbl_uebertrag_personalakte_scd_dates
          WHERE snapshot_date = p_snapshot_date;
     END IF;
 
-    INSERT INTO tbl_import_personalakte_scd_dates (snapshot_date, filedate)
+    INSERT INTO tbl_uebertrag_personalakte_scd_dates (snapshot_date, filedate)
     VALUES (p_snapshot_date, var_filedate);
 
     -- Close each previous source-row occurrence that is absent from this file.
-    UPDATE tbl_import_personalakte_scd_raw r
+    UPDATE tbl_uebertrag_personalakte_scd_raw r
     LEFT JOIN tmp_pa_raw_import i
       ON i.pers_nr = r.pers_nr
      AND i.row_hash = r.row_hash
@@ -116,7 +116,7 @@ SQL SECURITY DEFINER BEGIN
        AND i.pers_nr IS NULL;
 
     -- Start an interval only when that exact row occurrence is not already active.
-    INSERT INTO tbl_import_personalakte_scd_raw (
+    INSERT INTO tbl_uebertrag_personalakte_scd_raw (
           pers_nr, name_vorname, zeitarbeitsfirma, oe_der_person, schicht, info
         , beginn_besch, ende_besch, eg, geschlecht, taetigkeit, team, betriebsrat
         , einstellungsdatum, taetigkeit2, funktion, gebdatum, lastinsertupdate
@@ -130,7 +130,7 @@ SQL SECURITY DEFINER BEGIN
       FROM tmp_pa_raw_import i
      WHERE NOT EXISTS (
            SELECT 1
-             FROM tbl_import_personalakte_scd_raw r
+             FROM tbl_uebertrag_personalakte_scd_raw r
             WHERE r.pers_nr = i.pers_nr
               AND r.row_hash = i.row_hash
               AND r.duplicate_ordinal = i.duplicate_ordinal
