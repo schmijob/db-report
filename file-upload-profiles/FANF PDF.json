@@ -1,0 +1,37 @@
+{
+  "delimiter": "auto",
+  "derived_columns": [
+    {
+      "destination_column": "filename",
+      "input_formats": [],
+      "labels": [],
+      "output_format": "%Y-%m-%d %H:%M:%S",
+      "required": true,
+      "source": "filename"
+    },
+    {
+      "destination_column": "filedate",
+      "input_formats": [],
+      "labels": [],
+      "output_format": "%Y-%m-%d %H:%M:%S",
+      "required": true,
+      "source": "file_modified"
+    }
+  ],
+  "drop_empty_columns": true,
+  "encoding": "auto",
+  "footer_markers": [],
+  "header_aliases": {},
+  "header_scan_rows": 40,
+  "pad_missing_trailing_fields": false,
+  "pdf_layout": {
+    "column_gap_points": 20.0,
+    "column_names": [
+      "pdf_line",
+      "pdf_value"
+    ]
+  },
+  "skip_repeated_headers": false,
+  "skip_rows_if_blank": [],
+  "value_rules": {}
+}
