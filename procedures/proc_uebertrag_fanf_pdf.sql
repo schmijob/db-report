@@ -8,32 +8,51 @@ SQL SECURITY DEFINER BEGIN
 ## 
 ############################################################
 
--- filedate trennen falls mehrere Dateien gleichen Zeitstempel haben
+-- Einen Zeitstempel je Datei vergeben. Gezählt werden Dateien, nicht PDF-Zeilen.
 UPDATE tbl_import_fanf_pdf t
 JOIN (
-    SELECT filename,
-           filedate,
-           filedate + INTERVAL (
+    SELECT files.filename
+         , files.filedate
+         , files.filedate + INTERVAL (
                ROW_NUMBER() OVER (
-                   PARTITION BY filedate
-                   ORDER BY filename
+                   PARTITION BY files.filedate
+                   ORDER BY files.filename
                ) - 1
            ) SECOND AS adjusted_filedate
-    FROM tbl_import_fanf_pdf
-    WHERE filedate IN (
-        SELECT filedate
-        FROM (
-            SELECT filedate
+      FROM (
+          SELECT DISTINCT filename, filedate
             FROM tbl_import_fanf_pdf
-            GROUP BY filedate
-            HAVING COUNT(*) > 1
-        ) d
-    )
+      ) files
+     WHERE files.filedate IN (
+           SELECT repeated.filedate
+             FROM (
+                 SELECT filedate
+                   FROM (
+                       SELECT DISTINCT filename, filedate
+                         FROM tbl_import_fanf_pdf
+                   ) distinct_files
+                  GROUP BY filedate
+                 HAVING COUNT(*) > 1
+             ) repeated
+     )
 ) x
     ON t.filename = x.filename
    AND t.filedate = x.filedate
 SET t.filedate = x.adjusted_filedate
 WHERE t.filedate <> x.adjusted_filedate;
+
+IF EXISTS (
+    SELECT filedate
+      FROM (
+          SELECT DISTINCT filename, filedate
+            FROM tbl_import_fanf_pdf
+      ) distinct_files
+     GROUP BY filedate
+    HAVING COUNT(*) > 1
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Datei-Zeitstempel konnten nicht eindeutig vergeben werden.';
+END IF;
 
 -- scope definieren: tmp_fanf_updatelist
 
@@ -50,28 +69,175 @@ CREATE TEMPORARY TABLE tmp_fanf_updatelist (
 ;
 
 INSERT INTO tmp_fanf_updatelist (filedate, filename)
+SELECT DISTINCT filedate, filename
+  FROM tbl_import_fanf_pdf;
 
-SELECT filedate, filename
-  FROM tbl_import_fanf_pdf
- GROUP BY 1, 2
-;
+-- Ein einmaliger PDF-Fehler: Im WA-Abschnitt ist Staplerfahrer falsch
+-- verknuepft. Nur die erste solche Zeile nach Warenausgang wird normalisiert.
+DROP TEMPORARY TABLE IF EXISTS tmp_fanf_pdf_normalized;
+CREATE TEMPORARY TABLE tmp_fanf_pdf_normalized AS
+SELECT r.fanf_pdf_import_id
+     , r.filename
+     , r.filedate
+     , CASE WHEN wa.fanf_pdf_import_id IS NOT NULL
+            THEN 'LBH Teamleiter / Koordinator'
+            ELSE r.pdf_line
+       END AS pdf_line
+     , CASE WHEN wa.fanf_pdf_import_id IS NOT NULL THEN '0'
+            ELSE r.pdf_value
+       END AS pdf_value
+  FROM tbl_import_fanf_pdf r
+  LEFT JOIN (
+      SELECT candidate.filename
+           , candidate.filedate
+           , MIN(candidate.fanf_pdf_import_id) AS fanf_pdf_import_id
+        FROM tbl_import_fanf_pdf candidate
+        JOIN (
+            SELECT filename
+                 , filedate
+                 , MAX(fanf_pdf_import_id) AS section_id
+              FROM tbl_import_fanf_pdf
+             WHERE pdf_line = 'Warenausgang:'
+             GROUP BY filename, filedate
+        ) wa_section
+          ON wa_section.filename = candidate.filename
+         AND wa_section.filedate = candidate.filedate
+         AND candidate.fanf_pdf_import_id > wa_section.section_id
+       WHERE candidate.pdf_line = 'Staplerfahrer'
+       GROUP BY candidate.filename, candidate.filedate
+  ) wa
+    ON wa.filename = r.filename
+   AND wa.filedate = r.filedate
+   AND wa.fanf_pdf_import_id = r.fanf_pdf_import_id;
+
+-- Die neue Profilstruktur liefert Metadaten und Werte in getrennten Spalten.
+-- Fehlende oder widerspruechliche Metadaten muessen den Import abbrechen.
+IF EXISTS (
+    SELECT filename, filedate
+      FROM tbl_import_fanf_pdf
+     GROUP BY filename, filedate
+    HAVING COUNT(DISTINCT CASE
+               WHEN pdf_line = 'Forcast-Start'
+               THEN NULLIF(TRIM(pdf_value), '')
+           END) <> 1
+        OR COUNT(DISTINCT CASE
+               WHEN pdf_line = 'Forecast-Ende'
+               THEN NULLIF(TRIM(pdf_value), '')
+           END) <> 1
+        OR COUNT(DISTINCT CASE
+               WHEN pdf_line = 'Schicht'
+               THEN NULLIF(TRIM(pdf_value), '')
+           END) <> 1
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Forecast-Datum oder Schicht fehlt bzw. ist widerspruechlich.';
+END IF;
+
+IF EXISTS (
+    SELECT 1
+      FROM tbl_import_fanf_pdf
+     WHERE pdf_line = 'Forcast-Start'
+       AND (
+           TRIM(pdf_value) NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+           OR COALESCE(DATE_FORMAT(STR_TO_DATE(TRIM(pdf_value), '%Y-%m-%d'), '%Y-%m-%d'), '') <> TRIM(pdf_value)
+       )
+) OR EXISTS (
+    SELECT 1
+      FROM tbl_import_fanf_pdf
+     WHERE pdf_line = 'Forecast-Ende'
+       AND (
+           TRIM(pdf_value) NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+           OR COALESCE(DATE_FORMAT(STR_TO_DATE(TRIM(pdf_value), '%Y-%m-%d'), '%Y-%m-%d'), '') <> TRIM(pdf_value)
+       )
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Forecast-Datum hat kein gueltiges ISO-Format.';
+END IF;
+
+IF EXISTS (
+    SELECT 1
+      FROM tbl_import_fanf_pdf
+     WHERE pdf_line = 'Schicht'
+       AND TRIM(pdf_value) NOT IN ('Nachtschicht', 'Frühschicht', 'Spätschicht')
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Unbekannte Schicht.';
+END IF;
+
+-- Numerische Wertzeilen muessen direkt einer Funktion zugeordnet werden.
+IF EXISTS (
+    SELECT 1
+      FROM tmp_fanf_pdf_normalized r
+      LEFT JOIN tbl_stamm_funktionen f
+        ON f.funktion = r.pdf_line
+     WHERE NULLIF(TRIM(r.pdf_value), '') REGEXP '^[0-9]+$'
+       AND f.funktion IS NULL
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Numerische Zeile passt zu keiner Funktion in tbl_stamm_funktionen.';
+END IF;
+
+IF EXISTS (
+    SELECT filename, filedate
+      FROM tbl_import_fanf_pdf
+     GROUP BY filename, filedate
+    HAVING MAX(CASE WHEN pdf_line = 'Forcast-Start'
+                    THEN STR_TO_DATE(TRIM(pdf_value), '%Y-%m-%d') END)
+           > MAX(CASE WHEN pdf_line = 'Forecast-Ende'
+                      THEN STR_TO_DATE(TRIM(pdf_value), '%Y-%m-%d') END)
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Forecast-Start liegt nach Forecast-Ende.';
+END IF;
+
+IF EXISTS (
+    SELECT 1
+      FROM tmp_fanf_pdf_normalized r
+      JOIN tbl_stamm_funktionen f
+        ON f.funktion = r.pdf_line
+     WHERE NULLIF(TRIM(r.pdf_value), '') IS NOT NULL
+       AND TRIM(r.pdf_value) NOT REGEXP '^[0-9]+$'
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Funktionswert ist keine ganze Zahl.';
+END IF;
+
+IF EXISTS (
+    SELECT r.filename, r.filedate, f.funktion
+      FROM tmp_fanf_pdf_normalized r
+      JOIN tbl_stamm_funktionen f
+        ON f.funktion = r.pdf_line
+     WHERE NULLIF(TRIM(r.pdf_value), '') REGEXP '^[0-9]+$'
+     GROUP BY r.filename, r.filedate, f.funktion
+    HAVING COUNT(DISTINCT CAST(TRIM(r.pdf_value) AS UNSIGNED)) > 1
+) THEN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'FANF PDF: Eine Funktion hat in derselben Datei mehrere Werte.';
+END IF;
 
 ############################################################
 ## FANF PDF
 ## tbl_import_fanf_pdf -> tbl_uebertrag_fanf_pdf_parsed
 ############################################################
 
--- raw archivieren
-REPLACE INTO tbl_uebertrag_fanf_pdf (
+-- Raw-Archiv fuer die importierten Dateien idempotent ersetzen.
+DELETE a
+  FROM tbl_uebertrag_fanf_pdf a
+  JOIN tmp_fanf_updatelist u
+    ON u.filedate = a.filedate
+   AND u.filename = a.filename;
+
+INSERT INTO tbl_uebertrag_fanf_pdf (
     filename
   , filedate
   , pdf_line
+  , pdf_value
 )
 SELECT filename
      , filedate
      , pdf_line
-  FROM tbl_import_fanf_pdf
-;
+     , pdf_value
+  FROM tbl_import_fanf_pdf;
 
 -- parsed materialisieren
 REPLACE INTO tbl_uebertrag_fanf_pdf_parsed (
@@ -84,74 +250,50 @@ REPLACE INTO tbl_uebertrag_fanf_pdf_parsed (
   , beauftragung
 )
 
-WITH metadata AS (
-	SELECT r.filename
-	     , r.filedate
-	     , MAX(
-	           CASE
-	               WHEN r.pdf_line LIKE 'Forcast-Start%'
-	               THEN REPLACE(r.pdf_line, 'Forcast-Start', '')
-	           END
-	       ) AS start_date
-	     , MAX(
-	           CASE
-	               WHEN r.pdf_line LIKE 'Forecast-Ende%'
-	               THEN REPLACE(r.pdf_line, 'Forecast-Ende', '')
-	           END
-	       ) AS end_date
-	     , MAX(
-	           CASE
-	               WHEN r.pdf_line IN (
-	                    'SchichtNachtschicht'
-	                  , 'SchichtFrühschicht'
-	                  , 'SchichtSpätschicht'
-	               )
-	               THEN REPLACE(r.pdf_line, 'Schicht', '')
-	           END
-	       ) AS schicht
-
-	  FROM tbl_import_fanf_pdf r
-
-	  JOIN tmp_fanf_updatelist u
-	    ON u.filedate = r.filedate
-
-	 GROUP BY 1
-	        , 2
+WITH source_rows AS (
+    SELECT DISTINCT filename, filedate, pdf_line, pdf_value
+      FROM tmp_fanf_pdf_normalized
+), metadata AS (
+    SELECT r.filename
+         , r.filedate
+         , MAX(CASE WHEN r.pdf_line = 'Forcast-Start'
+                    THEN NULLIF(TRIM(r.pdf_value), '') END) AS start_date
+         , MAX(CASE WHEN r.pdf_line = 'Forecast-Ende'
+                    THEN NULLIF(TRIM(r.pdf_value), '') END) AS end_date
+         , MAX(CASE WHEN r.pdf_line = 'Schicht'
+                    THEN NULLIF(TRIM(r.pdf_value), '') END) AS schicht
+      FROM source_rows r
+      JOIN tmp_fanf_updatelist u
+        ON u.filedate = r.filedate
+       AND u.filename = r.filename
+     GROUP BY r.filename, r.filedate
+), function_values AS (
+    SELECT r.filename
+         , r.filedate
+         , f.funktion
+         , MAX(CAST(TRIM(r.pdf_value) AS UNSIGNED)) AS beauftragung
+      FROM source_rows r
+      JOIN tmp_fanf_updatelist u
+        ON u.filedate = r.filedate
+       AND u.filename = r.filename
+      JOIN tbl_stamm_funktionen f
+        ON f.funktion = r.pdf_line
+     WHERE NULLIF(TRIM(r.pdf_value), '') REGEXP '^[0-9]+$'
+     GROUP BY r.filename, r.filedate, f.funktion
 )
-
-SELECT r.filename
-     , r.filedate
+SELECT v.filename
+     , v.filedate
      , CAST(m.start_date AS DATE) + INTERVAL IF(m.schicht = 'Nachtschicht', 1, 0) DAY AS start_date
      , CAST(m.end_date AS DATE) + INTERVAL IF(m.schicht = 'Nachtschicht', 1, 0) DAY AS end_date
      , m.schicht
-     , map.clean_label AS funktion
-     , CAST(
-           NULLIF(
-               REGEXP_SUBSTR(
-                   TRIM(
-                       REPLACE(r.pdf_line, map.raw_label, '')
-                   )
-                 , '[0-9]+'
-               )
-             , ''
-           ) AS UNSIGNED
-       ) AS beauftragung
-
-  FROM tbl_import_fanf_pdf r
-
-  JOIN tmp_fanf_updatelist u
-    ON u.filedate = r.filedate
-
-  JOIN tbl_stamm_fanf_pdf_translate map
-    ON r.pdf_line LIKE CONCAT(map.raw_label, '%')
-
-  LEFT JOIN metadata m
-    ON m.filedate = r.filedate
-   AND m.filename = r.filename
-
-HAVING beauftragung IS NOT NULL
-   AND start_date <= end_date
-;
+     , v.funktion
+     , v.beauftragung
+  FROM function_values v
+  JOIN metadata m
+    ON m.filedate = v.filedate
+   AND m.filename = v.filename
+ WHERE CAST(m.start_date AS DATE) + INTERVAL IF(m.schicht = 'Nachtschicht', 1, 0) DAY
+       <= CAST(m.end_date AS DATE) + INTERVAL IF(m.schicht = 'Nachtschicht', 1, 0) DAY;
 
 ############################################################
 ## DATE RANGE SCOPE
@@ -339,6 +481,9 @@ SELECT f.datum
  ;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_fanf_updatelist
+ ;
+
+DROP TEMPORARY TABLE IF EXISTS tmp_fanf_pdf_normalized
  ;
 
 END//
